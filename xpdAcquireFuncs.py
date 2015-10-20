@@ -34,7 +34,12 @@ feature_keys = ['composition', 'temperature', 'experimenter_name'] # this need t
 w_dir = '/home/xf28id1/xpdUser/tif_base'
 r_dir = '/home/xf28id1/xpdUser/config_base'
 d_dir = '/home/xf28id1/xpdUser/dark_base'
-backup_dir = '/home/xf28id1/pe1_data'
+b_dir = '/home/xf28id1/pe1_data'
+
+def new_beamtime(user_in = None):
+    suf_dir = input('What's your desired backup directory for tif file?')
+    backup_dir = os.path.join(b_dir,sur_dir)
+    # fixme: need to include command of deleting tif_base, config_base
 
 def meta_gen(fields, values):
     """generate metadata dictionary used in your run engines
@@ -80,24 +85,48 @@ def save_tiff(header_list, summing = True):
             hour = time[11:16]
             timestamp = '_'.join([date, hour])
             
-            # get images from headers
+            # get images and expo time from headers
             imgs = np.array(get_images(header,'pe1_image_lightfield'))
+            cnt_time = header.start.acquire_time
+
+            # Identify the latest dark stack
+            f_d = [ f for f in os.listdir(d_dir) ]
+	    f_dummy = []
+	    for f in f_d:
+                f_dummy.append(os.path.join(d_dir,f))
+	    f_sort = sorted(f_dummy, key = os.path.getmtime)
+             
+            # get uid and look up cnt_time of target dark image
+            d_uid = f_sort[-1][:5]
+            d_cnt = db['d_uid'].expo_time
             
+            
+            # dark correction
+            d_num = int(np.round(cnt_time / d_cnt))
+            d_img_list = np.array(get_images(db['d_uid'],'pe1_image_lightfield')) # fixme: need to see if this list comes with reverse order
+
+            correct_imgs = []
+            for i in range(imgs.shape[0]):
+                correct_imgs.append(imgs[i]-np.sum(d_img_list[:d_num],0))
+            
+            
+             
             if summing == True:
                 f_name = '_'.join([uid_val, timestamp, feature+'.tif'])
                 w_name = os.path.join(w_dir,f_name)
-                img = np.sum(imgs,0)
+                img = np.sum(correct_imgs,0)
                 imsave(w_name, img) # overwrite mode now !!!!
                 if os.path.isfile(w_name):
                     print('%s has been saved at %s' % (f_name, w_dir))
                 else:
                     print('Sorry, somthing went wrong with your tif saving')
                     return
+
             elif summing == False:
-                for i in range(imgs.shape[0]):
+                for i in range(correct_imgs.shape[0]):
                     f_name = '_'.join([uid_val, timestamp, feature,'00'+str(i)+'.tif'])
                     w_name = os.path.join(w_dir,f_name)
-                    img = imgs[i]
+                    img = correct_imgs[i]
                     imsave(w_name, img) # overwrite mode now !!!!
                     if os.path.isfile(w_name):
                         print('%s has been saved at %s' % (f_name, w_dir))
@@ -115,7 +144,7 @@ def save_tiff(header_list, summing = True):
             dummy += str(header.start[key])+'_'
 
         feature = dummy[:-1]
-        uid_val = header.start.uid[:6]
+        uid_val = header.start.uid[:5]
         try:
             comment = header.start['comments']
         except:
@@ -128,31 +157,54 @@ def save_tiff(header_list, summing = True):
         date = time[:10]
         hour = time[11:16]
         timestamp = '_'.join([date, hour])
-            
-        # get images as np array from headers
+        # get images and expo time from headers
         imgs = np.array(get_images(header,'pe1_image_lightfield'))
+        cnt_time = header.start.acquire_time
+
+        # Identify the latest dark_stack
+        f_d = [ f for f in os.listdir(d_dir) ]
+	f_dummy = []
+	for f in f_d:
+            f_dummy.append(os.path.join(d_dir,f))
+	f_sort = sorted(f_dummy, key = os.path.getmtime)
+             
+        # get uid and look up cnt_time of dark_image
+        d_uid = f_sort[-1][:5]
+        d_cnt = db['d_uid'].expo_time
+            
+            
+        # dark correction
+        d_num = int(np.round(cnt_time / d_cnt))
+        d_img_list = np.array(get_images(db['d_uid'],'pe1_image_lightfield')) # fixme: need to see if this list comes with reverse order
+
+        correct_imgs = []
+        for i in range(imgs.shape[0]):
+            correct_imgs.append(imgs[i]-np.sum(d_img_list[:d_num],0))
+            
+             
         if summing == True:
+            
             f_name = '_'.join([uid_val, timestamp, feature+'.tif'])
             w_name = os.path.join(w_dir,f_name)
-            img = np.sum(imgs,0)
+            img = np.sum(correct_imgs,0)
             imsave(w_name, img) # overwrite mode now !!!!
             if os.path.isfile(w_name):
                 print('%s has been saved at %s' % (f_name, w_dir))
             else:
                 print('Sorry, somthing went wrong with your tif saving')
-                return
-        elif summing == False:
-            for i in range(imgs.shape[0]):
-                f_name = '_'.join([uid_val, timestamp, feature,'00'+str(i)+'.tif'])
-                w_name = os.path.join(w_dir,f_name)
-                img = imgs[i]
-                imsave(w_name, img) # overwrite mode now !!!!
-                if os.path.isfile(w_name):
-                    print('%s has been saved at %s' % (f_name, w_dir))
-                else:
-                    print('Sorry, somthing went wrong with your tif saving')
                     return
-       
+        elif summing == False:
+            for i in range(correct_imgs.shape[0]):
+	    f_name = '_'.join([uid_val, timestamp, feature,'00'+str(i)+'.tif'])
+	    w_name = os.path.join(w_dir,f_name)
+	    img = correct_imgs[i]
+	    imsave(w_name, img) # overwrite mode now !!!!
+	    if os.path.isfile(w_name):
+		print('%s has been saved at %s' % (f_name, w_dir))
+	    else:
+		print('Sorry, somthing went wrong with your tif saving')
+		return
+
 
 def run_calibration(sample, wavelength, exp_time=0.2 , num=10, **kwargs):
     '''Runs a calibration dataset
@@ -163,7 +215,7 @@ def run_calibration(sample, wavelength, exp_time=0.2 , num=10, **kwargs):
     exp_time - float - count-time in seconds.  Default = 0.2 s
     num - int - number of counts
     '''
-    import os
+
     # set up calibration information
     gs.RE.md['comments'] = 'calibration'
     gs.RE.md['calibrant'] = sample
@@ -514,104 +566,11 @@ def sanity_check(user_in=None):
     else:
         return
 
-def data_saver(header_list, save_dir = False):
-    ''' save image data of give header_list as tif file to save_dir
-    arguments:
-    header_list - list - a list of desired header
-    save_dir - str - directory name of where tif data will be saved. Default is /home/xf28id1/xpdUser/tif_base
-    '''
-
-    excluding_list = ['calibration', 'instrument'] # which fields are excluded in ploting header
-    cal_list = []
-    feature_list = []
-    uid_list = []
-    try: 
-        for header in header_list:
-            dummy = ""
-            dummy_key_list = [e for e in header.start.sample.keys() if f not in excluding_list] # stroe list independently
-
-            for key in dummy_key_list:
-                dummy += str(header.start.sample[key])+'_'
-            feature = dummy[:-1]
-
-            try:
-                #comment_list.append(header.start.sample['comments'])
-                cal_list.append(header.start.sample['calibration'])
-                uid_list.append(header.start.uid[:4])
-            except:
-                pass
-        # prepare timestamp, uid
-            time= str(datetime.datetime.fromtimestamp(header.stop.time))
-            date = time[:10]
-            hour = time[11:16]
-            timestamp = '_'.join([date, hour])
-            uid = header.stop.uid[:4]
-
-            file_name = '_'.join([uid, feature, timestamp])
-            ts.basename = file_name
-
-            if not save_dir:
-                tif_dir = w_dir
-            else:
-                tif_dir = save_dir
-            ts.outputdir = tif_dir
-
-            try:
-                ts.saveScans(header)
-                print('tif files are successfully saved at '+ tif_dir + '. Confirm it as you wish')
-            except:
-                print('tif is not saved for some reason. Please check your setting')
-                print('Typical issue: does your header contain 2D image?')        
-                return
-    except AttributeError:
-        dummy = ""
-        header = header_list # important !
-        key_list = header.start.sample.keys()
-        dummy_key_list = [f for f in key_list if f not in excluding_list] # stroe list independently
-
-        for key in dummy_key_list:
-            dummy += str(header.start.sample[key])+'_'      
-        feature = dummy[:-1]
-
-        try:
-            #comment_list.append(header.start.sample['comments'])
-            cal_list.append(header.start.sample['calibration'])
-            uid_list.append(header.start.uid[:4])
-        except:
-            pass
-                
-        
-        # prepare timestamp, uid
-        time= str(datetime.datetime.fromtimestamp(header_list.stop.time))
-        date = time[:10]
-        hour = time[11:16]
-        timestamp = '_'.join([date, hour])
-        uid = header_list.stop.uid[:4]
-
-        file_name = '_'.join([uid, feature, timestamp])
-        ts.basename = file_name
-
-        if not save_dir:
-            tif_dir = w_dir
-        else:
-            tif_dir = save_dir
-        ts.outputdir = tif_dir
-
-        try:
-            ts.saveScans(header)
-            print('tif files are successfully saved at '+ tif_dir + '. Confirm it as you wish')
-        except:
-            print('tif is not saved for some reason. Please check your setting')
-            print('Typical issue: does your header contain 2D image?')        
-            return
-
-
 def prompt_save(name):
-    excluding_list = ['calibration', 'instrument'] # which fields are excluded in ploting header
     if name == "stop":
         header = db[-1]
         dummy = ""
-        dummy_key_list = [f for f in header.start.sample.keys() if f not in excluding_list] # stroe it independently
+        dummy_key_list = [f for f in header.start.sample.keys() if f in feature_list] # stroe it independently
             
         for key in dummy_key_list:
             dummy += str(header.start.sample[key])+'_'
@@ -623,12 +582,20 @@ def prompt_save(name):
         date = time[:10]
         hour = time[11:16]
         timestamp = '_'.join([date, hour])
-        uid = header.stop.uid[:4]
+        uid = header.stop.uid[:5]
 
-        file_name = '_'.join([uid, feature, timestamp])
-        ts.basename = file_name
-        ts.outputdir = user_backup_dir
-        ts.saveScans(header)
+        file_name = '_'.join([uid, timestamp, feature])
+        imgs = get_images(header,'pe1_image_lightfield')
+        for i in range(imgs.shape[0]):
+	    f_name = '_'.join([uid, timestamp, feature,'00'+str(i)+'.tif'])
+	    w_name = os.path.join(backup_dir,f_name)
+	    img = imgs[i]
+	    imsave(w_name, img) # overwrite mode now !!!!
+	    if os.path.isfile(w_name):
+		print('%s has been saved at %s' % (f_name, backup_dir))
+	    else:
+		print('Sorry, somthing went wrong with your tif saving')
+		return
 
 def get_dark_images(num = 600, cnt_time =0.5):
     """ Acquire dark image stacks as a correction base
@@ -662,7 +629,7 @@ def get_dark_images(num = 600, cnt_time =0.5):
     timestamp = header.start.dark_info.timestamp
     imgs = get_images(header,'pe1_image_lightfiled')
 
-    for i in range(imgs.shape[0]):
+    for i in range(imgs.shape[0])
         f_name = '_'.join([uid, timestamp, dark,'00'+str(i)+'.tif'])
         w_name = os.path.join(d_dir,f_name)
         img = imgs[i]
@@ -671,20 +638,3 @@ def get_dark_images(num = 600, cnt_time =0.5):
             print('Sorry, somthing went wrong when doing dark_image') # just quit, not printing
             return
 
-
-
-
-def dark_correction(header_list, dark_base = d_dir):
-    ''' substract dark images from images contained in given header list
-
-    arguments:
-    header_list - list - list of headers that contains images you want to fo dark correction
-    dark_base - str - specify directory of your dark image stack. Default is /home/xf28id1/xpdUser/dark_base
-
-    '''
-
-    dark_info = gs.RE.md['dark_info']
-    dark_count_time = dark_info['expo_time']
-    excluding_list = ['calibration', 'instrument']
-    
-   # fund out
