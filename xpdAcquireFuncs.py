@@ -38,11 +38,13 @@ backup_dir = '/home/xf28id1/pe1_data'
 
 def meta_gen(fields, values):
     """generate metadata dictionary used in your run engines
-    arguments:
-        -fields: metadata fields, it is defined to suite your need.
-        -values: metadata values corresponding to fields your defined.
-        
-    Note: Please type in fields and corresponding values of desired search with exact order
+    
+        arguments:
+        fields - list of strings - user defined metadata fields that will be dictionary keys
+        values - list of strings - key values metadata values corresponding to fields your defined.
+    
+    returns:
+        dictionary of fields and values
     """
     metadata_dict = {}
     for i in range(len(fields)):
@@ -50,17 +52,18 @@ def meta_gen(fields, values):
     return metadata_dict
 
 def save_tiff(header_list, summing = True):
-    ''' save image files in certain header(s)
+    ''' save images obtained from dataBroker as tiff format files
     
-    argument:
-    header_list - list - obtained from dataBroker
-    summing - decided if you want to sum different frames
-
+    arguments:
+        header_list - list of header objects - obtained from dataBroker
+        summing - bool - frames will be summed if true
+    returns:
+        nothing
     '''
     # iterate over header(s)
     try: 
         for header in header_list:
-            dummy = ""
+            dummy = ''
             dummy_key_list = [e for e in header.start.keys() if e in feature_keys] # stroe a list independently
 
             for key in dummy_key_list:
@@ -107,7 +110,7 @@ def save_tiff(header_list, summing = True):
 
 
     except AttributeError:  # when only one header is given
-        dummy = ""
+        dummy = ''
         header = header_list
         dummy_key_list = [f for f in header.start.keys() if f in feature_keys]
 
@@ -141,7 +144,7 @@ def save_tiff(header_list, summing = True):
             else:
                 print('Sorry, somthing went wrong with your tif saving')
                 return
-        elif summing == False:
+        else:
             for i in range(imgs.shape[0]):
                 f_name = '_'.join([uid_val, timestamp, feature,'00'+str(i)+'.tif'])
                 w_name = os.path.join(w_dir,f_name)
@@ -158,10 +161,10 @@ def run_calibration(sample, wavelength, exp_time=0.2 , num=10, **kwargs):
     '''Runs a calibration dataset
     
     Arguments:
-    sample - string - Chemical composition of the calibrant in form LaB6, for example
-    wavelength - float - wavelength in nm, which is obtained from verify_wavelength function
-    exp_time - float - count-time in seconds.  Default = 0.2 s
-    num - int - number of counts
+        sample - string - Chemical composition of the calibrant in form LaB6, for example
+        wavelength - float - wavelength in nm, which is obtained from verify_wavelength function
+        exp_time - float - count-time in seconds.  Default = 0.2 s
+        num - int - number of counts. Default = 10
     '''
     import os
     # set up calibration information
@@ -190,8 +193,7 @@ def run_calibration(sample, wavelength, exp_time=0.2 , num=10, **kwargs):
 
     gs.RE.md['comments'] = ''
     gs.RE.md['calibrant'] = ''
-    gs.RE.md['composition'] = ''
-    gs.RE.md['wavelength'] = '' # fixme: maybe delete it as we don't need in experiments ?
+    gs.RE.md['composition'] = ''  #fixme.  These below should be reset to the previous values (before run_calibration was run).  This way, someone can run a calibration in the middle of another sample arun
     gs.RE.md['acquisition_time'] = ''
     gs.RE.md['num_calib_exposures'] = ''
     
@@ -220,7 +222,12 @@ def load_calibration(config_file = False, config_dir = False):
     
     takes calibration values from a SrXplanar config file and 
     loads them in the Bluesky global state run engine metadata dictionary. 
-    They will all automatically be saved
+    They will all automatically be saved.  
+    
+    An example workflow is the following:
+    1) run_calibration('Ni',wavelength=0.1234)
+    2) open xPDFsuite and run the calibration in the SrXplanar module (green button
+           in xPDFsuite).  See SrXplanar help documentation for more info.
     
     Arguments:
     config_file - str - name of your desired config file. If unspecified, most recent one will be used
