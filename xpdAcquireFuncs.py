@@ -674,10 +674,17 @@ def get_dark_images(num = 600, cnt_time =0.5):
 
 
 
-def dark_correction(header_list, dark_base):
-    """ substract dark images """
+def dark_correction(header_list, dark_base = d_dir):
+    ''' substract dark images from images contained in given header list
+
+    arguments:
+    header_list - list - list of headers that contains images you want to fo dark correction
+    dark_base - str - specify directory of your dark image stack. Default is /home/xf28id1/xpdUser/dark_base
+
+    '''
 
     dark_info = gs.RE.md['dark_info']
     dark_count_time = dark_info['expo_time']
     excluding_list = ['calibration', 'instrument']
-
+    
+   # fund out
