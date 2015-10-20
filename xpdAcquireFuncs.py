@@ -37,7 +37,7 @@ d_dir = '/home/xf28id1/xpdUser/dark_base'
 b_dir = '/home/xf28id1/pe1_data'
 
 def new_beamtime(user_in = None):
-    suf_dir = input('What's your desired backup directory for tif file?')
+    suf_dir = input('What is your desired backup directory for tif file?')
     backup_dir = os.path.join(b_dir,sur_dir)
     # fixme: need to include command of deleting tif_base, config_base
 
