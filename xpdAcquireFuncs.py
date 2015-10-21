@@ -17,6 +17,7 @@ Code is currently hosted at gitHub.com/chiahaoliu/xpdAcquireFuncs
 import os
 import sys
 import time
+import copy
 import datetime
 import numpy as np
 import pandas as pd
@@ -25,21 +26,7 @@ import matplotlib.pyplot as plt
 import matplotlib.image as mpimg
 from configparser import ConfigParser
 
-import bluesky.scans
-from bluesky.global_state import gs
-from bluesky.examples import motor, det
-from bluesky.run_engine import RunEngine
-from bluesky.run_engine import DocumentNames
-from bluesky.broker_callbacks import LiveImage
-from bluesky.callbacks import CallbackBase, LiveTable, LivePlot
-
-from ophyd.commands import *
-from ophyd.controls import *
-
-from dataportal import DataBroker as db
-from dataportal import get_events, get_table, get_images
-from metadatastore.commands import find_run_starts
-from tifffile import *
+#import localimports
 
 #pd.set_option('max_colwidth',70)
 pd.set_option('colheader_justify','left')
@@ -98,10 +85,7 @@ def save_tiff(header_list, summing = True):
                 cal = header.start['calibration']
             except KeyError:
                 pass
-            time= str(datetime.datetime.fromtimestamp(header.stop.time))
-            date = time[:10]
-            hour = time[11:16]
-            timestamp = '_'.join([date, hour])
+            time_stub = _timestampstr(header.stop.time)
             
             # get images and expo time from headers
             imgs = np.array(get_images(header,'pe1_image_lightfield'))
@@ -130,26 +114,26 @@ def save_tiff(header_list, summing = True):
             
              
             if summing == True:
-                f_name = '_'.join([uid_val, timestamp, feature+'.tif'])
+                f_name = '_'.join([uid_val, time_stub, feature+'.tif'])
                 w_name = os.path.join(W_DIR,f_name)
                 img = np.sum(correct_imgs,0)
                 imsave(w_name, img) # overwrite mode now !!!!
                 if os.path.isfile(w_name):
                     print('%s has been saved at %s' % (f_name, W_DIR))
                 else:
-                    print('Sorry, somthing went wrong with your tif saving')
+                    print('Sorry, something went wrong with your tif saving')
                     return
 
             elif summing == False:
                 for i in range(correct_imgs.shape[0]):
-                    f_name = '_'.join([uid_val, timestamp, feature,'00'+str(i)+'.tif'])
+                    f_name = '_'.join([uid_val, time_stub, feature,'00'+str(i)+'.tif'])
                     w_name = os.path.join(W_DIR,f_name)
                     img = correct_imgs[i]
                     imsave(w_name, img) # overwrite mode now !!!!
                     if os.path.isfile(w_name):
                         print('%s has been saved at %s' % (f_name, W_DIR))
                     else:
-                        print('Sorry, somthing went wrong with your tif saving')
+                        print('Sorry, something went wrong with your tif saving')
                         return
 
 
@@ -221,7 +205,7 @@ def save_tiff(header_list, summing = True):
                 if os.path.isfile(w_name):
                     print('%s has been saved at %s' % (f_name, W_DIR))
                 else:
-                    print('Sorry, somthing went wrong with your tif saving')
+                    print('Sorry, something went wrong with your tif saving')
                 return
 
 
@@ -629,26 +613,43 @@ def prompt_save(name):
             if os.path.isfile(w_name):
                 print('%s has been saved at %s' % (f_name, backup_dir))
             else:
-                print('Sorry, somthing went wrong with your tif saving')
+                print('Sorry, something went wrong with your tif saving')
                 return
 
-def get_dark_images(num = 600, cnt_time =0.5):
-    ''' Acquire dark image stacks as a correction base
+def get_dark_images(num=600, cnt_time=0.5):
+    ''' Manually acquire stacks of dark images that will be used for dark subtraction later
+
+    This module runs scans with the shutter closed (dark images) and saves them tagged
+    as such.  You shouldn't have to look at these, they will be automatically used later
+    for doing dark subtraction when you collect actual images.
+    
+    The default settings are to collect 5 minutes worth of dark scans in increments
+    of 0.5 seconds.  This default behavior can be overriden by providing optional
+    values for num (number of frames) and cnt_time.
+    
+    Arguments:
+       num - int - Optional. Number of dark frames to take.  Default = 600
+       cnt_time - float - Optional. exposure time for each frame. Default = 0.5 
     '''
-    gs.RE.md['dark_bool'] = True
-    gs.RE.md['dark_scan_info'] = {'dark_exposure_time':cnt_time}
-    
     # set up scan
+    gs.RE.md['isdark'] = True
+    gs.RE.md['dark_scan_info'] = {'dark_exposure_time':cnt_time}   
+    cnt_hold = copy.copy(pe1.acquire_time)
     pe1.acquire_time = cnt_time
-    ctscan = bluesky.scans.Count([pe1],num)
-   # ctscan.subs = LiveTable(['pe1'])
     
-    # obtain dark image
-    gs.RE(ctscan)
+    try:
+        ctscan = bluesky.scans.Count([pe1],num)
+        # ctscan.subs = LiveTable(['pe1'])
+        gs.RE(ctscan)
 
-    gs.RE.md['dark_bool'] = False
-    print('Your current acquire_time is %i' % pe1.acquire_time)
-
+        gs.RE.md['isdark'] = False
+        # delete dark_scan_info 
+        pe1.acquire_time = cnt_hold
+    except:
+        gs.RE.md['isdark'] = False
+        # delete dark_scan_info field
+        pe1.acquire_time = cnt_hold
+        
     # write images to tif file
     header = db[-1]
     uid = header.start.uid[:5]
@@ -664,4 +665,10 @@ def get_dark_images(num = 600, cnt_time =0.5):
             print('Investigate and re-run')
             return
 
+def _timestampstr(timestamp):
+    time= str(datetime.datetime.fromtimestamp(timestamp))
+    date = time[:10]
+    hour = time[11:16]
+    timestampstring = '_'.join([date, hour])
+    return timestampstring
 
