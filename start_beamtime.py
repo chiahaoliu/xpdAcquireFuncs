@@ -6,14 +6,16 @@ def start_beamtime():
     import os
     
     HOME_DIR = '/home/xf28id1/xpdUser'
+    HOME_DIR = './test'
     os.chdir(HOME_DIR)
     current_dir = os.getcwd()
-    print('successfully moved to working directory: '+current_dir)
+    print('successfully moved to working directory: ')
+    print(current_dir+'\n')
     
     # fixme check that all of tif_base, dark_base, config_base are empty
     empty = True
     if not empty:
-        print('the working directories are not empty.'
+        print('the working directories are not empty.')
         print('if this is really a new beamtime, then please run end_beamtime.py to archive')
         print('the current user-generated data and empty the directories for the new user.')
         exit()
