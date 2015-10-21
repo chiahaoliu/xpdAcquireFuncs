@@ -116,7 +116,7 @@ def save_tiff(header_list, summing = True):
              
             # get uid and look up cnt_time of target dark image
             d_uid = f_sort[-1][:5]
-            d_cnt = db['d_uid'].expo_time
+            d_cnt = db['d_uid'].start.dark_scan_info.dark_exposure_time
             
             
             # dark correction
@@ -189,7 +189,7 @@ def save_tiff(header_list, summing = True):
              
         # get uid and look up cnt_time of dark_image
         d_uid = f_sort[-1][:5]
-        d_cnt = db['d_uid'].expo_time
+        d_cnt = db['d_uid'].start.dark_scan_info.dark_exposure_time
             
             
         # dark correction
@@ -371,63 +371,46 @@ def new_user(User, Sample, Comments=False, temperature = False, **kwargs):
     comments - str - comments to current experiment
     *kargs - str - any fields you want to update in metadata dictionary
     '''
-    while True:
-        if not temperature:
-            temp = str(cs700.value[1])+'K'
-        else:
-            temp = str(temperature) # user defined value
-        
-        # read out current metadata diectionray
-        gs.RE.md['experimenter_name'] = User
-        gs.RE.md['composition'] = Sample
-        gs.RE.md['temperature'] = temp
-        gs.RE.md['date'] = str(datetime.datetime.today().date())
-        
-        if not Comments:
-            gs.RE.md['comments'] = ''
-        else:    
-            gs.RE.md['comments'] = Comments
-        
-        # user define keys
-        for key, value in kwargs.items():
-            gs.RE.md[key] = value
-
-        meta_keys = list(gs.RE.md.keys())
-        meta_values = list(gs.RE.md.values())
+    if not temperature:
+        temp = str(cs700.value[1])+'K'
+    else:
+        temp = str(temperature) # user defined value
     
-        print('Your metadata fields are: '+ str(meta_keys))
-        print('Corresponding values are: '+ str(meta_values))
-        
-        time.sleep(0.5)
-        #fixme: discuss with Sanjit on 20151018, not sure if we are doing this or not
-        user_dir = input('Where do you want to put your backup file under /home/xf28id1/pe1_data ?')
-        user_backup_dir = os.path.join(backup_dir, user_dir) 
-
-        user_justify = input('Is everything listed above correct?(y/n)')
-        if user_justify == 'y':
-            break
-
-        elif user_justify == 'n':
-            print('Aborted. Stop setting up')
-            return
-        
-        else:
-            print('Please only type in y/n')
-            print('Return to defining meatadata')
-            pass
+    # read out current metadata diectionray
+    gs.RE.md['experimenter_name'] = User
+    gs.RE.md['composition'] = Sample
+    gs.RE.md['temperature'] = temp
+    gs.RE.md['date'] = str(datetime.datetime.today().date())
     
+    if not Comments:
+        gs.RE.md['comments'] = ''
+    else:    
+        gs.RE.md['comments'] = Comments
+    
+    # user define keys
+    for key, value in kwargs.items():
+        gs.RE.md[key] = value
+
+    meta_keys = list(gs.RE.md.keys())
+    meta_values = list(gs.RE.md.values())
+
+    print('Your metadata fields are: '+ str(meta_keys))
+    print('Corresponding values are: '+ str(meta_values))
+    
+    time.sleep(0.5)
+
     print('Continue setting up global run engines(gs.RE) with your metadata.......')
     time.sleep(0.5)
     print('global runengine states have been updated')
     print('Initialization finished.')
-        
+    
 def new_sample(Sample, **kwargs):
     '''Sets up the metadata when the sample has been changed
     
     Argument:
     Sample - str - list of your sample and it can include amount infortmation
     '''
-    gs.RE.md['sample']['composition'] = str(Sample)
+    gs.RE.md['composition'] = str(Sample)
 
     #user defined field
     for key, value in kwargs.items():
@@ -494,11 +477,11 @@ def table_gen(header_list):
         except KeyError:
             pass
         try:
-            cal_list.append(heade.start['calibration'])
+            cal_list.append(header.start['calibration'])
         except KeyError:
             pass
         try:
-            uid_list.append(heade.start['calibration'])
+            uid_list.append(header.start['calibration'])
         except KeyError:
             pass
     except AttributeError:
@@ -525,11 +508,11 @@ def table_gen(header_list):
         except KeyError:
             pass
         try:
-            cal_list.append(heade.start['calibration'])
+            cal_list.append(header.start['calibration'])
         except KeyError:
             pass
         try:
-            uid_list.append(heade.start['calibration'])
+            uid_list.append(header.start['calibration'])
         except KeyError:
             pass
     plt_list = [feature_list, comment_list, uid_list] # u_id for ultimate search
@@ -652,42 +635,33 @@ def prompt_save(name):
 def get_dark_images(num = 600, cnt_time =0.5):
     ''' Acquire dark image stacks as a correction base
     '''
-    gs.RE.md['dark_bool'] = 'True'
-    
-    time= str(datetime.datetime.fromtimestamp(header.stop.time))
-    date = time[:10]
-    hour = time[11:16]
-    timestamp = '_'.join([date, hour])
-    dark_info = {'uids':[], 'timestamp':timestamp, 'expo_time':cnt_time}
+    gs.RE.md['dark_bool'] = True
+    gs.RE.md['dark_scan_info'] = {'dark_exposure_time':cnt_time}
     
     # set up scan
     pe1.acquire_time = cnt_time
-    ctscan = bluesky.scans.Count([pe1],num) 
+    ctscan = bluesky.scans.Count([pe1],num)
+   # ctscan.subs = LiveTable(['pe1'])
     
     # obtain dark image
     gs.RE(ctscan)
 
-#    for i in range(num):  #fixme: I follow the sudo code, but don't we want long count time?
-#        ct()
-#        uid = db[-1].start.uid
-#        dark_info['uids']=uid[:5] # put into dictionary
-    
-    gs.RE.md['dark_bool'] = 'False'
-    gs.RE.md['dark_info'] = dark_info # put in your dark dictionary
+    gs.RE.md['dark_bool'] = False
     print('Your current acquire_time is %i' % pe1.acquire_time)
 
+    # write images to tif file
     header = db[-1]
     uid = header.start.uid[:5]
-    timestamp = header.start.dark_info.timestamp
-    imgs = get_images(header,'pe1_image_lightfiled')
-
+    timestamp = str(datetime.datetime.fromtimestamp(header.start.time))
+    imgs = np.array(get_images(header,'pe1_image_lightfield'))
     for i in range(imgs.shape[0]):
-        f_name = '_'.join([uid, timestamp, dark,'00'+str(i)+'.tif'])
-        w_name = os.path.join(R_DIR,f_name)
+        f_name = '_'.join([uid, timestamp, 'dark','00'+str(i)+'.tif'])
+        w_name = os.path.join(D_DIR,f_name)
         img = imgs[i]
         imsave(w_name, img) # overwrite mode now !!!!
         if not os.path.isfile(w_name):
-            print('Sorry, something went wrong when doing dark_image') # just quit, not printing
+            print('Error: dark image tif file not written')
+            print('Investigate and re-run')
             return
 
 
