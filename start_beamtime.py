@@ -6,7 +6,7 @@ def start_beamtime():
     import os
     
     HOME_DIR = '/home/xf28id1/xpdUser'
-    HOME_DIR = './test'
+
     os.chdir(HOME_DIR)
     current_dir = os.getcwd()
     print('successfully moved to working directory: ')
