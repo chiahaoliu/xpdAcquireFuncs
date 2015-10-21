@@ -90,13 +90,13 @@ def save_tiff(header_list, summing = True):
                 dummy += str(header.start[key])+'_'      
             feature = dummy[:-1]
             uid_val = header.start.uid[:6]
-            try: # try to obtain these fields
+            try: 
                 comment = header.start['comments']
-            except:
+            except KeyError:
                 pass
-            try: # try to obtain these fields
+            try: 
                 cal = header.start['calibration']
-            except:
+            except KeyError:
                 pass
             time= str(datetime.datetime.fromtimestamp(header.stop.time))
             date = time[:10]
@@ -153,7 +153,8 @@ def save_tiff(header_list, summing = True):
                         return
 
 
-    except AttributeError:  # when only one header is given
+    except AttributeError:  
+    # when only one header is given
         dummy = ''
         header = header_list
         dummy_key_list = [f for f in header.start.keys() if f in feature_keys]
@@ -233,7 +234,11 @@ def run_calibration(sample, wavelength, exp_time=0.2 , num=10, **kwargs):
         exp_time - float - count-time in seconds.  Default = 0.2 s
         num - int - number of counts. Default = 10
     '''
-
+    # store initial info
+    hold_list = ['acquisition_time','composition', 'num_calib_exposures']
+    for field in hold_list:
+        hold_dict[field]] = gs.RE.md[field]
+ 
     # set up calibration information
     gs.RE.md['comments'] = 'calibration'
     gs.RE.md['calibrant'] = sample
@@ -243,6 +248,7 @@ def run_calibration(sample, wavelength, exp_time=0.2 , num=10, **kwargs):
     gs.RE.md['num_calib_exposures'] = num 
 
     # extra field define whatever you want
+    extra_key = kwargs.keys()
     for key, value in kwargs.items():
         gs.RE.md[key] = value
     
@@ -253,17 +259,15 @@ def run_calibration(sample, wavelength, exp_time=0.2 , num=10, **kwargs):
     ctscan.subs = LiveTable(['pe1_image_lightfield'])
     gs.RE(ctscan)
 
-    # recover to clean state, remove extra key
-    extra_key = [f for f in gs.RE.md.keys() if f not in default_keys]
+    # recover to previous state, set to values before calibration
     for key in extra_key:
-        del(gs.RE.md[key])
-
+        gs.RE.md[key] = ''
+        # del(gs.RE.md[key]) # alternative: delete it    
     gs.RE.md['comments'] = ''
     gs.RE.md['calibrant'] = ''
-    gs.RE.md['composition'] = ''  #fixme.  These below should be reset to the previous values (before run_calibration was run).  This way, someone can run a calibration in the middle of another sample arun
-    gs.RE.md['acquisition_time'] = ''
-    gs.RE.md['num_calib_exposures'] = ''
-    
+    for key, value in hold_list.items():
+        gs.RE.md[key] = value
+
     # add a short time-stamp to the tiff filename
     header = db[-1]
     time= str(datetime.datetime.fromtimestamp(header.stop.time))
@@ -399,7 +403,7 @@ def new_user(User, Sample, Comments=False, temperature = False, **kwargs):
         user_dir = input('Where do you want to put your backup file under /home/xf28id1/pe1_data ?')
         user_backup_dir = os.path.join(backup_dir, user_dir) 
 
-        user_justify = input('Is everything listed above correct?(y/n))
+        user_justify = input('Is everything listed above correct?(y/n)')
         if user_justify == 'y':
             break
 
@@ -470,38 +474,64 @@ def table_gen(header_list):
     feature_list = []
     comment_list = []
     uid_list = []
-    excluding_list = ['calibration', 'instrument'] # which fields are excluded when ploting header
     try: 
         for header in header_list:
             dummy = ''
-            dummy_key_list = [e for e in header.start.sample.keys() if f not in excluding_list] # stroe list independently
+            dummy_key_list = [e for e in header.start.keys() if e in feature_list] # stroe list independently
+
+	    time= str(datetime.datetime.fromtimestamp(header.stop.time))
+	    date = time[:10]
+	    hour = time[11:16]
+	    timestamp = '_'.join([date, hour])
 
             for key in dummy_key_list:
-                dummy += str(header.start.sample[key])+'_'      
-            feature_list.append(dummy[:-1])
-
+                dummy += str(header.start[key])+'_'      
+            feature_list.append(timestamp + dummy[:-1])
+	    
+	    
             try:
-                comment_list.append(header.start.sample['comments'])
-                cal_list.append(header.start.sample['calibration'])
-                uid_list.append(header.start.uid[:4])
-            except:
+                comment_list.append(header.start['comments'])
+            except KeyError:
+                pass
+	    try:
+                cal_list.append(heade.start['calibration'])
+            except KeyError:
+                pass
+	    try:
+                uid_list.append(heade.start['calibration'])
+            except KeyError:
                 pass
     except AttributeError:
+        header = header_list
         dummy = ''
-        key_list = header_list.start.sample.keys()
-        dummy_key_list = [f for f in key_list if f not in excluding_list] # stroe list independently
+        key_list = header.start.keys()
+        dummy_key_list = [f for f in key_list if f in feature_list] # stroe list independently
+
+	time= str(datetime.datetime.fromtimestamp(header.stop.time))
+	date = time[:10]
+	hour = time[11:16]
+	timestamp = '_'.join([date, hour])
 
         for key in dummy_key_list:
-            dummy += str(header_list.start.sample[key])+'_'      
-        feature_list.append(dummy[:-1])
-
+            dummy += str(header.start[key])+'_'      
+        feature_list.append(timestamp + dummy[:-1])
+	
+        time= str(datetime.datetime.fromtimestamp(header.stop.time))
+	date = time[:10]
+	hour = time[11:16]
+	timestamp = '_'.join([date, hour])
         try:
-            comment_list.append(header_list.start.sample['comments'])
-            cal_list.append(header_list.start.sample['calibration'])
-            uid_list.append(header_list.start.uid[:4])
-        except:
+            comment_list.append(header.start['comments'])
+        except KeyError:
             pass
-
+	try:
+            cal_list.append(heade.start['calibration'])
+        except KeyError:
+            pass
+	try:
+            uid_list.append(heade.start['calibration'])
+        except KeyError:
+            pass
     plt_list = [feature_list, comment_list, uid_list] # u_id for ultimate search
     inter_tab = pd.DataFrame(plt_list)
     tab = inter_tab.transpose()
@@ -574,9 +604,9 @@ def time_search(startTime,stopTime=False,exp_day1=False,exp_day2=False):
 
 
 def sanity_check(user_in=None):
-    user = gs.RE.md['sample']['experimenter_name']
-    compo = gs.RE.md['sample']['composition']
-    calib = gs.RE.md['sample']['calibration']
+    user = gs.RE.md['experimenter_name']
+    compo = gs.RE.md['composition']
+    calib = gs.RE.md['calibration']
     time = str(datetime.datetime.now())
     
     print('Hey '+user+' ,current sample is: '+compo+', calibration file is using: '+calib+', time is: '+time)
@@ -592,10 +622,10 @@ def prompt_save(name):
     if name == 'stop':
         header = db[-1]
         dummy = ''
-        dummy_key_list = [f for f in header.start.sample.keys() if f in feature_list] # stroe it independently
+        dummy_key_list = [f for f in header.start.keys() if f in feature_list] # stroe it independently
             
         for key in dummy_key_list:
-            dummy += str(header.start.sample[key])+'_'
+            dummy += str(header.start[key])+'_'
                 
         feature = dummy[:-1]
         
