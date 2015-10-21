@@ -67,7 +67,7 @@ def meta_gen(fields, values):
         metadata_dict[fields[i]] = values[i]
     return metadata_dict
 
-def save_tiff(header_list, summing = True):
+def save_tiff(headers, summing = True):
     ''' save images obtained from dataBroker as tiff format files
     
     arguments:
@@ -79,115 +79,45 @@ def save_tiff(header_list, summing = True):
     # fixme check header_list is a list
     # if not, make header_list into a list with one element, then proceed
     # fixme this is much better than copy-pasting lines and lines of code.
-    
+    if type(headers) == list:
+        header_list = headers
+    else:
+        header_list = list(headers)
+ 
     # iterate over header(s)
-    try: 
-        for header in header_list:
-            dummy = ''
-            dummy_key_list = [e for e in header.start.keys() if e in feature_keys] # stroe a list independently
-
-            for key in dummy_key_list:
-                dummy += str(header.start[key])+'_'      
-            feature = dummy[:-1]
-            uid_val = header.start.uid[:6]
-            try: 
-                comment = header.start['comments']
-            except KeyError:
-                pass
-            try: 
-                cal = header.start['calibration']
-            except KeyError:
-                pass
-            time= str(datetime.datetime.fromtimestamp(header.stop.time))
-            date = time[:10]
-            hour = time[11:16]
-            timestamp = '_'.join([date, hour])
-            
-            # get images and expo time from headers
-            imgs = np.array(get_images(header,'pe1_image_lightfield'))
-            cnt_time = header.start.acquire_time
-
-            # Identify the latest dark stack
-            f_d = [ f for f in os.listdir(D_DIR) ]
-            f_dummy = []
-            for f in f_d:
-                f_dummy.append(os.path.join(D_DIR,f))
-            f_sort = sorted(f_dummy, key = os.path.getmtime)
-             
-            # get uid and look up cnt_time of target dark image
-            d_uid = f_sort[-1][:5]
-            d_cnt = db['d_uid'].start.dark_scan_info.dark_exposure_time
-            
-            
-            # dark correction
-            d_num = int(np.round(cnt_time / d_cnt))
-            d_img_list = np.array(get_images(db['d_uid'],'pe1_image_lightfield')) # fixme: need to see if this list comes with reverse order
-
-            correct_imgs = []
-            for i in range(imgs.shape[0]):
-                correct_imgs.append(imgs[i]-np.sum(d_img_list[:d_num],0))
-            
-            
-             
-            if summing == True:
-                f_name = '_'.join([uid_val, timestamp, feature+'.tif'])
-                w_name = os.path.join(W_DIR,f_name)
-                img = np.sum(correct_imgs,0)
-                imsave(w_name, img) # overwrite mode now !!!!
-                if os.path.isfile(w_name):
-                    print('%s has been saved at %s' % (f_name, W_DIR))
-                else:
-                    print('Sorry, somthing went wrong with your tif saving')
-                    return
-
-            elif summing == False:
-                for i in range(correct_imgs.shape[0]):
-                    f_name = '_'.join([uid_val, timestamp, feature,'00'+str(i)+'.tif'])
-                    w_name = os.path.join(W_DIR,f_name)
-                    img = correct_imgs[i]
-                    imsave(w_name, img) # overwrite mode now !!!!
-                    if os.path.isfile(w_name):
-                        print('%s has been saved at %s' % (f_name, W_DIR))
-                    else:
-                        print('Sorry, somthing went wrong with your tif saving')
-                        return
-
-
-    except AttributeError:  
-    # when only one header is given
+    for header in header_list:
         dummy = ''
-        header = header_list
-        dummy_key_list = [f for f in header.start.keys() if f in feature_keys]
+        dummy_key_list = [e for e in header.start.keys() if e in feature_keys] # stroe a list independently
 
-        for key in dummy_key_list:
-            dummy += str(header.start[key])+'_'
-
+	for key in dummy_key_list:
+            dummy += str(header.start[key])+'_'      
         feature = dummy[:-1]
-        uid_val = header.start.uid[:5]
-        try:
+        uid_val = header.start.uid[:6]
+        try: 
             comment = header.start['comments']
-        except:
+        except KeyError:
             pass
-        try:
+        try: 
             cal = header.start['calibration']
-        except:
+        except KeyError:
             pass
         time= str(datetime.datetime.fromtimestamp(header.stop.time))
         date = time[:10]
         hour = time[11:16]
         timestamp = '_'.join([date, hour])
+            
         # get images and expo time from headers
         imgs = np.array(get_images(header,'pe1_image_lightfield'))
         cnt_time = header.start.acquire_time
 
-        # Identify the latest dark_stack
+        # Identify the latest dark stack
         f_d = [ f for f in os.listdir(D_DIR) ]
         f_dummy = []
         for f in f_d:
             f_dummy.append(os.path.join(D_DIR,f))
         f_sort = sorted(f_dummy, key = os.path.getmtime)
              
-        # get uid and look up cnt_time of dark_image
+        # get uid and look up cnt_time of target dark image
         d_uid = f_sort[-1][:5]
         d_cnt = db['d_uid'].start.dark_scan_info.dark_exposure_time
             
@@ -198,11 +128,9 @@ def save_tiff(header_list, summing = True):
 
         correct_imgs = []
         for i in range(imgs.shape[0]):
-            correct_imgs.append(imgs[i]-np.sum(d_img_list[:d_num],0))
-            
+            correct_imgs.append(imgs[i]-np.sum(d_img_list[:d_num],0)
              
         if summing == True:
-            
             f_name = '_'.join([uid_val, timestamp, feature+'.tif'])
             w_name = os.path.join(W_DIR,f_name)
             img = np.sum(correct_imgs,0)
@@ -210,9 +138,10 @@ def save_tiff(header_list, summing = True):
             if os.path.isfile(w_name):
                 print('%s has been saved at %s' % (f_name, W_DIR))
             else:
-                print('Sorry, something went wrong with your tif saving')
+                print('Sorry, somthing went wrong with your tif saving')
                 return
-        else:
+
+        elif summing == False:
             for i in range(correct_imgs.shape[0]):
                 f_name = '_'.join([uid_val, timestamp, feature,'00'+str(i)+'.tif'])
                 w_name = os.path.join(W_DIR,f_name)
@@ -235,6 +164,7 @@ def run_calibration(sample, wavelength, exp_time=0.2 , num=10, **kwargs):
         num - int - number of counts. Default = 10
     '''
     # store initial info
+    hold_dict = {}
     hold_list = ['acquisition_time','composition', 'num_calib_exposures']
     for field in hold_list:
         hold_dict[field] = gs.RE.md[field]
@@ -362,12 +292,12 @@ def load_calibration(config_file = False, config_dir = False):
     print('Subsequent scans will carry the calibration data in their metadata stores until load_calibration() is run again.')
     
 
-def new_user(User, Sample, Comments=False, temperature = False, **kwargs):
-    '''creates new metadata field for your runengine
+def config_md(user=False, sample, comments=False, temperature = False, **kwargs):
+    '''configure metadata field for your runengine
     
     Arguments:
-    name - str - current user name
-    sample - str - current sample
+    name - str or list - current user name(s)
+    sample - str or list - current sample
     comments - str - comments to current experiment
     *kargs - str - any fields you want to update in metadata dictionary
     '''
@@ -375,10 +305,12 @@ def new_user(User, Sample, Comments=False, temperature = False, **kwargs):
         temp = str(cs700.value[1])+'K'
     else:
         temp = str(temperature) # user defined value
+    if type(sample) == str:
+       #fixme : parsing elements
     
-    # read out current metadata diectionray
-    gs.RE.md['experimenter_name'] = User
-    gs.RE.md['composition'] = Sample
+    # write metadata diectionray
+    gs.RE.md['experimenter_name'] = user
+    gs.RE.md['composition'] = sample
     gs.RE.md['temperature'] = temp
     gs.RE.md['date'] = str(datetime.datetime.today().date())
     
@@ -391,32 +323,12 @@ def new_user(User, Sample, Comments=False, temperature = False, **kwargs):
     for key, value in kwargs.items():
         gs.RE.md[key] = value
 
-    meta_keys = list(gs.RE.md.keys())
-    meta_values = list(gs.RE.md.values())
-
-    print('Your metadata fields are: '+ str(meta_keys))
-    print('Corresponding values are: '+ str(meta_values))
-    
+    print('Your metadata dictionary is %s' % gs.RE.md)
     time.sleep(0.5)
-
-    print('Continue setting up global run engines(gs.RE) with your metadata.......')
+    print('Setting up global run engines(gs.RE) with your metadata.......')
     time.sleep(0.5)
     print('global runengine states have been updated')
     print('Initialization finished.')
-    
-def new_sample(Sample, **kwargs):
-    '''Sets up the metadata when the sample has been changed
-    
-    Argument:
-    Sample - str - list of your sample and it can include amount infortmation
-    '''
-    gs.RE.md['composition'] = str(Sample)
-
-    #user defined field
-    for key, value in kwargs.items():
-        gs.RE.md[key] = value
-
-    return
     
 def and_search(**kwargs):
     '''generate mongoDB recongnizable query of "and_search" and rerutn data
@@ -431,7 +343,6 @@ def and_search(**kwargs):
         Note: Please type in fields and corresponding values of desired search with exact order
     '''
     dict_gen = {}
-    cond_list = []
     
     for key, value in kwargs.items():
         dict_gen[key] = value
@@ -443,7 +354,7 @@ def and_search(**kwargs):
     
     return and_header
     
-def table_gen(header_list):
+def table_gen(headers):
     ''' Takes in a header list generated by search functions and return a talbe
     with metadata information
     
@@ -457,38 +368,15 @@ def table_gen(header_list):
     feature_list = []
     comment_list = []
     uid_list = []
-    try: 
-        for header in header_list:
-            dummy = ''
-            dummy_key_list = [e for e in header.start.keys() if e in feature_list] # stroe list independently
 
-        time= str(datetime.datetime.fromtimestamp(header.stop.time))
-        date = time[:10]
-        hour = time[11:16]
-        timestamp = '_'.join([date, hour])
+    if type(headers) == list:
+        header_list = header_list
+    else:
+        header_list = list(headers)
 
-        for key in dummy_key_list:
-            dummy += str(header.start[key])+'_'      
-        feature_list.append(timestamp + dummy[:-1])
-	    
-	    
-        try:
-            comment_list.append(header.start['comments'])
-        except KeyError:
-            pass
-        try:
-            cal_list.append(header.start['calibration'])
-        except KeyError:
-            pass
-        try:
-            uid_list.append(header.start['calibration'])
-        except KeyError:
-            pass
-    except AttributeError:
-        header = header_list
+    for header in header_list:
         dummy = ''
-        key_list = header.start.keys()
-        dummy_key_list = [f for f in key_list if f in feature_list] # stroe list independently
+        dummy_key_list = [e for e in header.start.keys() if e in feature_list] # stroe list independently
 
         time= str(datetime.datetime.fromtimestamp(header.stop.time))
         date = time[:10]
@@ -498,11 +386,7 @@ def table_gen(header_list):
         for key in dummy_key_list:
             dummy += str(header.start[key])+'_'      
         feature_list.append(timestamp + dummy[:-1])
-	
-        time= str(datetime.datetime.fromtimestamp(header.stop.time))
-        date = time[:10]
-        hour = time[11:16]
-        timestamp = '_'.join([date, hour])
+	    
         try:
             comment_list.append(header.start['comments'])
         except KeyError:
@@ -641,13 +525,11 @@ def get_dark_images(num = 600, cnt_time =0.5):
     # set up scan
     pe1.acquire_time = cnt_time
     ctscan = bluesky.scans.Count([pe1],num)
-   # ctscan.subs = LiveTable(['pe1'])
+    ctscan.subs = LiveTable([pe1])
     
     # obtain dark image
     gs.RE(ctscan)
-
     gs.RE.md['dark_bool'] = False
-    print('Your current acquire_time is %i' % pe1.acquire_time)
 
     # write images to tif file
     header = db[-1]
@@ -658,7 +540,7 @@ def get_dark_images(num = 600, cnt_time =0.5):
         f_name = '_'.join([uid, timestamp, 'dark','00'+str(i)+'.tif'])
         w_name = os.path.join(D_DIR,f_name)
         img = imgs[i]
-        imsave(w_name, img) # overwrite mode now !!!!
+        imsave(w_name, img) # overwrite mode 
         if not os.path.isfile(w_name):
             print('Error: dark image tif file not written')
             print('Investigate and re-run')
