@@ -3,7 +3,15 @@ def start_beamtime():
 
     Function checks that tif_base, dark_base etc. is empty from the previous beamtime
     '''
+    import os
+    
+    HOME_DIR = '/home/xf28id1/xpdUser'
+    os.chdir(HOME_DIR)
+    current_dir = os.getcwd()
+    print('successfully moved to working directory: '+current_dir)
+    
     # fixme check that all of tif_base, dark_base, config_base are empty
+    empty = True
     if not empty:
         print('the working directories are not empty.'
         print('if this is really a new beamtime, then please run end_beamtime.py to archive')
