@@ -26,7 +26,7 @@ import matplotlib.pyplot as plt
 import matplotlib.image as mpimg
 from configparser import ConfigParser
 
-#import localimports
+import localimports
 
 #pd.set_option('max_colwidth',70)
 pd.set_option('colheader_justify','left')
@@ -141,68 +141,76 @@ def save_tiff(headers, summing = True):
                 return
 
 
-def run_calibration(sample, wavelength, exp_time=0.2 , num=10, **kwargs):
+def get_calibration_images(sample, wavelength, exposure_time=0.2 , num=10, **kwargs):
     '''Runs a calibration dataset
     
     Arguments:
         sample - string - Chemical composition of the calibrant in form LaB6, for example
         wavelength - float - wavelength in nm, which is obtained from verify_wavelength function
-        exp_time - float - count-time in seconds.  Default = 0.2 s
-        num - int - number of counts. Default = 10
+        exposure_time - float - count-time in seconds.  Default = 0.2 s
+        num - int - number of exposures to take. Default = 10
+        **kwargs - dictionary - user specified info about the calibration. Don't use
+            this to set global metadata, only use it to add information about the calibration
+            It gets stored in the 'calibration_scan_info' dictionary.
     '''
-    # store initial info
-    hold_dict = {}
-    hold_list = ['acquisition_time','composition', 'num_calib_exposures']
-    for field in hold_list:
-        hold_dict[field] = gs.RE.md[field]
- 
-    # set up calibration information
-    gs.RE.md['comments'] = 'calibration'
+     
+    cnt_hold = copy.copy(pe1.acquire_time)
+    sample_hold = copy.copy(gs.RE.md['composition'])
+    pe1.acquire_time = 0.2
+    gs.RE.md['iscalibration'] = True
     gs.RE.md['calibrant'] = sample
     gs.RE.md['composition'] = sample
     gs.RE.md['wavelength'] = wavelength
-    gs.RE.md['acquisition_time'] = exp_time
-    gs.RE.md['num_calib_exposures'] = num 
-
+    gs.RE.md['calibration_scan_info'] = {'acquisition_time':exposure_time,'num_calib_exposures':num}
     # extra field define whatever you want
     extra_key = kwargs.keys()
     for key, value in kwargs.items():
-        gs.RE.md[key] = value
+        gs.RE.md['calibration_scan_info'][key] = value
     
-    # define a scan
-    pe1.acquire_time = 0.2
-    ctscan = bluesky.scans.Count([pe1], num=num)
-    print('collecting calibration data. '+str(num)+' acquisitions of '+str(exp_time)+' s will be collected')
-    ctscan.subs = LiveTable(['pe1_image_lightfield'])
-    gs.RE(ctscan)
+    try:
+        ctscan = bluesky.scans.Count([pe1], num=num)
+        print('collecting calibration data. '+str(num)+' acquisitions of '+str(exp_time)+' s will be collected')
+        ctscan.subs = LiveTable(['pe1_image_lightfield'])
+        gs.RE(ctscan)
 
-    # recover to previous state, set to values before calibration
-    for key in extra_key:
-        gs.RE.md[key] = ''
-        # del(gs.RE.md[key]) # alternative: delete it    
-    gs.RE.md['comments'] = ''
-    gs.RE.md['calibrant'] = ''
-    for key, value in hold_list.items():
-        gs.RE.md[key] = value
-
-    # add a short time-stamp to the tiff filename
+        # recover to previous state, set to values before calibration
+        pe1.acquire_time = cnt_hold
+        gs.RE.md['iscalibration'] = False
+        del(gs.RE.md['calibrant'])
+        gs.RE.md['composition'] = sample_hold
+        del(gs.RE.md['calibration_scan_info'])
+    except:
+        # recover to previous state, set to values before calibration
+        pe1.acquire_time = cnt_hold
+        gs.RE.md['iscalibration'] = False
+        del(gs.RE.md['calibrant'])
+        gs.RE.md['composition'] = sample_hold
+        del(gs.RE.md['calibration_scan_info'])
+        print('scan failed. metadata dictionary reset to starting values. 
+        print('To debug, try running some scans using ctscan=bluesky.scans.Count([pe1])')
+        print('then gs.RE(ctscan).  When it is working, rerun get_calibration_images()')
+        return
+    
+    # construct calibration tif file name
     header = db[-1]
-    time= str(datetime.datetime.fromtimestamp(header.stop.time))
-    date = time[:10]
-    hour = time[11:16]
-    timestamp = '_'.join([date, hour])
-    uid = header.start.uid[:6]
-
-    # sum images together before saving
-    imgs = np.array(get_images(header,'pe1_image_lightfield'))
-    if imgs.ndim ==3:
-        img = np.sum(imgs,0)
-    f_name = '_'.join(['calib', uid, timestamp, sample,'.tif'])
+    time_stub = _timestampstr(header.stop.time)
+    uid_stub = header.start.uid[:6]
+    f_name = '_'.join(['calib', uid_stub, time_stub, sample+'.tif'])
     w_name = os.path.join(W_DIR, f_name)
+
+    # sum images together and save
+    imgs = np.array(get_images(header,'pe1_image_lightfield'))
+    multiple_images = False
+    if imgs.ndim ==3: multiple_images = True
+    if multiple_images:
+        img = np.sum(imgs,0)
+    else:
+        img = imgs               
     imsave(w_name, img)
+    
+    # confirm the write took place
     if os.path.isfile(w_name):
         print('A summed image %s has been saved to %s' % (f_name, W_DIR))
-    #print(str(check_output(['ls', '-1t', '|', 'head', '-n', '10'], shell=True)).replace('\\n', '\n'))
    
 
 def load_calibration(config_file = False, config_dir = False):
@@ -558,4 +566,7 @@ def _timestampstr(timestamp):
     hour = time[11:16]
     timestampstring = '_'.join([date, hour])
     return timestampstring
+
+# Holding place
+    #print(str(check_output(['ls', '-1t', '|', 'head', '-n', '10'], shell=True)).replace('\\n', '\n'))
 
