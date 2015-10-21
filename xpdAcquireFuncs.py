@@ -109,10 +109,10 @@ def save_tiff(header_list, summing = True):
 
             # Identify the latest dark stack
             f_d = [ f for f in os.listdir(D_DIR) ]
-	    f_dummy = []
-	    for f in f_d:
+            f_dummy = []
+            for f in f_d:
                 f_dummy.append(os.path.join(D_DIR,f))
-	    f_sort = sorted(f_dummy, key = os.path.getmtime)
+            f_sort = sorted(f_dummy, key = os.path.getmtime)
              
             # get uid and look up cnt_time of target dark image
             d_uid = f_sort[-1][:5]
@@ -182,10 +182,10 @@ def save_tiff(header_list, summing = True):
 
         # Identify the latest dark_stack
         f_d = [ f for f in os.listdir(D_DIR) ]
-	f_dummy = []
-	for f in f_d:
+        f_dummy = []
+        for f in f_d:
             f_dummy.append(os.path.join(D_DIR,f))
-	f_sort = sorted(f_dummy, key = os.path.getmtime)
+        f_sort = sorted(f_dummy, key = os.path.getmtime)
              
         # get uid and look up cnt_time of dark_image
         d_uid = f_sort[-1][:5]
@@ -214,15 +214,15 @@ def save_tiff(header_list, summing = True):
                 return
         else:
             for i in range(correct_imgs.shape[0]):
-	    f_name = '_'.join([uid_val, timestamp, feature,'00'+str(i)+'.tif'])
-	    w_name = os.path.join(W_DIR,f_name)
-	    img = correct_imgs[i]
-	    imsave(w_name, img) # overwrite mode now !!!!
-	    if os.path.isfile(w_name):
-		print('%s has been saved at %s' % (f_name, W_DIR))
-	    else:
-		print('Sorry, somthing went wrong with your tif saving')
-		return
+                f_name = '_'.join([uid_val, timestamp, feature,'00'+str(i)+'.tif'])
+                w_name = os.path.join(W_DIR,f_name)
+                img = correct_imgs[i]
+                imsave(w_name, img) # overwrite mode now !!!!
+                if os.path.isfile(w_name):
+                    print('%s has been saved at %s' % (f_name, W_DIR))
+                else:
+                    print('Sorry, somthing went wrong with your tif saving')
+                return
 
 
 def run_calibration(sample, wavelength, exp_time=0.2 , num=10, **kwargs):
@@ -237,7 +237,7 @@ def run_calibration(sample, wavelength, exp_time=0.2 , num=10, **kwargs):
     # store initial info
     hold_list = ['acquisition_time','composition', 'num_calib_exposures']
     for field in hold_list:
-        hold_dict[field]] = gs.RE.md[field]
+        hold_dict[field] = gs.RE.md[field]
  
     # set up calibration information
     gs.RE.md['comments'] = 'calibration'
@@ -479,56 +479,56 @@ def table_gen(header_list):
             dummy = ''
             dummy_key_list = [e for e in header.start.keys() if e in feature_list] # stroe list independently
 
-	    time= str(datetime.datetime.fromtimestamp(header.stop.time))
-	    date = time[:10]
-	    hour = time[11:16]
-	    timestamp = '_'.join([date, hour])
+        time= str(datetime.datetime.fromtimestamp(header.stop.time))
+        date = time[:10]
+        hour = time[11:16]
+        timestamp = '_'.join([date, hour])
 
-            for key in dummy_key_list:
-                dummy += str(header.start[key])+'_'      
-            feature_list.append(timestamp + dummy[:-1])
+        for key in dummy_key_list:
+            dummy += str(header.start[key])+'_'      
+        feature_list.append(timestamp + dummy[:-1])
 	    
 	    
-            try:
-                comment_list.append(header.start['comments'])
-            except KeyError:
-                pass
-	    try:
-                cal_list.append(heade.start['calibration'])
-            except KeyError:
-                pass
-	    try:
-                uid_list.append(heade.start['calibration'])
-            except KeyError:
-                pass
+        try:
+            comment_list.append(header.start['comments'])
+        except KeyError:
+            pass
+        try:
+            cal_list.append(heade.start['calibration'])
+        except KeyError:
+            pass
+        try:
+            uid_list.append(heade.start['calibration'])
+        except KeyError:
+            pass
     except AttributeError:
         header = header_list
         dummy = ''
         key_list = header.start.keys()
         dummy_key_list = [f for f in key_list if f in feature_list] # stroe list independently
 
-	time= str(datetime.datetime.fromtimestamp(header.stop.time))
-	date = time[:10]
-	hour = time[11:16]
-	timestamp = '_'.join([date, hour])
+        time= str(datetime.datetime.fromtimestamp(header.stop.time))
+        date = time[:10]
+        hour = time[11:16]
+        timestamp = '_'.join([date, hour])
 
         for key in dummy_key_list:
             dummy += str(header.start[key])+'_'      
         feature_list.append(timestamp + dummy[:-1])
 	
         time= str(datetime.datetime.fromtimestamp(header.stop.time))
-	date = time[:10]
-	hour = time[11:16]
-	timestamp = '_'.join([date, hour])
+        date = time[:10]
+        hour = time[11:16]
+        timestamp = '_'.join([date, hour])
         try:
             comment_list.append(header.start['comments'])
         except KeyError:
             pass
-	try:
+        try:
             cal_list.append(heade.start['calibration'])
         except KeyError:
             pass
-	try:
+        try:
             uid_list.append(heade.start['calibration'])
         except KeyError:
             pass
@@ -639,15 +639,15 @@ def prompt_save(name):
         file_name = '_'.join([uid, timestamp, feature])
         imgs = get_images(header,'pe1_image_lightfield')
         for i in range(imgs.shape[0]):
-	    f_name = '_'.join([uid, timestamp, feature,'00'+str(i)+'.tif'])
-	    w_name = os.path.join(backup_dir,f_name)
-	    img = imgs[i]
-	    imsave(w_name, img) # overwrite mode now !!!!
-	    if os.path.isfile(w_name):
-		print('%s has been saved at %s' % (f_name, backup_dir))
-	    else:
-		print('Sorry, somthing went wrong with your tif saving')
-		return
+            f_name = '_'.join([uid, timestamp, feature,'00'+str(i)+'.tif'])
+            w_name = os.path.join(backup_dir,f_name)
+            img = imgs[i]
+            imsave(w_name, img) # overwrite mode now !!!!
+            if os.path.isfile(w_name):
+                print('%s has been saved at %s' % (f_name, backup_dir))
+            else:
+                print('Sorry, somthing went wrong with your tif saving')
+                return
 
 def get_dark_images(num = 600, cnt_time =0.5):
     ''' Acquire dark image stacks as a correction base
@@ -681,7 +681,7 @@ def get_dark_images(num = 600, cnt_time =0.5):
     timestamp = header.start.dark_info.timestamp
     imgs = get_images(header,'pe1_image_lightfiled')
 
-    for i in range(imgs.shape[0])
+    for i in range(imgs.shape[0]):
         f_name = '_'.join([uid, timestamp, dark,'00'+str(i)+'.tif'])
         w_name = os.path.join(R_DIR,f_name)
         img = imgs[i]
