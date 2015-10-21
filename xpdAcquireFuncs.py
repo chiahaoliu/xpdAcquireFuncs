@@ -1,3 +1,19 @@
+####################################
+#
+# copyright 2015 trustees of Columbia University in the City of New York
+#
+# coded by Chia-Hao Liu, Simon Billinge and Dan Allan
+#
+# this code is in the public domain.  Use at your own risk.
+#
+#####################################
+'''Module of helper functions for running experiments at the XPD instrument at NSLS-II
+
+For instructions how to use these functions, please see the help tutorial online.
+Instructions for reaching it are at the XPD beamline
+
+Code is currently hosted at gitHub.com/chiahaoliu/xpdAcquireFuncs
+'''
 import os
 import sys
 import time
@@ -28,18 +44,13 @@ from tifffile import *
 #pd.set_option('max_colwidth',70)
 pd.set_option('colheader_justify','left')
 
-default_keys = ['owner', 'beamline_id', 'group', 'config', 'scan_id'] # default fields in databroker
-feature_keys = ['composition', 'temperature', 'experimenter_name'] # this need to be hard coded, as it defines our human readible file name
+default_keys = ['owner', 'beamline_id', 'group', 'config', 'scan_id'] # required by dataBroker
+feature_keys = ['composition', 'temperature', 'experimenter_name'] # required by XPD
 
-w_dir = '/home/xf28id1/xpdUser/tif_base'
-r_dir = '/home/xf28id1/xpdUser/config_base'
-d_dir = '/home/xf28id1/xpdUser/dark_base'
-b_dir = '/home/xf28id1/pe1_data'
-
-def new_beamtime(user_in = None):
-    suf_dir = input('What is your desired backup directory for tif file?')
-    backup_dir = os.path.join(b_dir,sur_dir)
-    # fixme: need to include command of deleting tif_base, config_base
+# These are the default directory paths on the XPD data acquisition computer.  Change if needed here
+W_DIR = '/home/xf28id1/xpdUser/tif_base'                # where the user-requested tif's go.  Local drive
+R_DIR = '/home/xf28id1/xpdUser/config_base'             # where the xPDFsuite generated config files go.  Local drive
+D_DIR = '/home/xf28id1/xpdUser/dark_base'               # where the tifs from dark-field collections go. Local drive
 
 def meta_gen(fields, values):
     '''generate metadata dictionary used in your run engines
@@ -60,11 +71,15 @@ def save_tiff(header_list, summing = True):
     ''' save images obtained from dataBroker as tiff format files
     
     arguments:
-        header_list - list of header objects - obtained from dataBroker
+        header_list - list of header objects - obtained from a query to dataBroker
         summing - bool - frames will be summed if true
     returns:
         nothing
     '''
+    # fixme check header_list is a list
+    # if not, make header_list into a list with one element, then proceed
+    # fixme this is much better than copy-pasting lines and lines of code.
+    
     # iterate over header(s)
     try: 
         for header in header_list:
@@ -93,10 +108,10 @@ def save_tiff(header_list, summing = True):
             cnt_time = header.start.acquire_time
 
             # Identify the latest dark stack
-            f_d = [ f for f in os.listdir(d_dir) ]
+            f_d = [ f for f in os.listdir(D_DIR) ]
 	    f_dummy = []
 	    for f in f_d:
-                f_dummy.append(os.path.join(d_dir,f))
+                f_dummy.append(os.path.join(D_DIR,f))
 	    f_sort = sorted(f_dummy, key = os.path.getmtime)
              
             # get uid and look up cnt_time of target dark image
@@ -116,11 +131,11 @@ def save_tiff(header_list, summing = True):
              
             if summing == True:
                 f_name = '_'.join([uid_val, timestamp, feature+'.tif'])
-                w_name = os.path.join(w_dir,f_name)
+                w_name = os.path.join(W_DIR,f_name)
                 img = np.sum(correct_imgs,0)
                 imsave(w_name, img) # overwrite mode now !!!!
                 if os.path.isfile(w_name):
-                    print('%s has been saved at %s' % (f_name, w_dir))
+                    print('%s has been saved at %s' % (f_name, W_DIR))
                 else:
                     print('Sorry, somthing went wrong with your tif saving')
                     return
@@ -128,11 +143,11 @@ def save_tiff(header_list, summing = True):
             elif summing == False:
                 for i in range(correct_imgs.shape[0]):
                     f_name = '_'.join([uid_val, timestamp, feature,'00'+str(i)+'.tif'])
-                    w_name = os.path.join(w_dir,f_name)
+                    w_name = os.path.join(W_DIR,f_name)
                     img = correct_imgs[i]
                     imsave(w_name, img) # overwrite mode now !!!!
                     if os.path.isfile(w_name):
-                        print('%s has been saved at %s' % (f_name, w_dir))
+                        print('%s has been saved at %s' % (f_name, W_DIR))
                     else:
                         print('Sorry, somthing went wrong with your tif saving')
                         return
@@ -165,10 +180,10 @@ def save_tiff(header_list, summing = True):
         cnt_time = header.start.acquire_time
 
         # Identify the latest dark_stack
-        f_d = [ f for f in os.listdir(d_dir) ]
+        f_d = [ f for f in os.listdir(D_DIR) ]
 	f_dummy = []
 	for f in f_d:
-            f_dummy.append(os.path.join(d_dir,f))
+            f_dummy.append(os.path.join(D_DIR,f))
 	f_sort = sorted(f_dummy, key = os.path.getmtime)
              
         # get uid and look up cnt_time of dark_image
@@ -188,22 +203,22 @@ def save_tiff(header_list, summing = True):
         if summing == True:
             
             f_name = '_'.join([uid_val, timestamp, feature+'.tif'])
-            w_name = os.path.join(w_dir,f_name)
+            w_name = os.path.join(W_DIR,f_name)
             img = np.sum(correct_imgs,0)
             imsave(w_name, img) # overwrite mode now !!!!
             if os.path.isfile(w_name):
-                print('%s has been saved at %s' % (f_name, w_dir))
+                print('%s has been saved at %s' % (f_name, W_DIR))
             else:
                 print('Sorry, something went wrong with your tif saving')
                 return
         else:
             for i in range(correct_imgs.shape[0]):
 	    f_name = '_'.join([uid_val, timestamp, feature,'00'+str(i)+'.tif'])
-	    w_name = os.path.join(w_dir,f_name)
+	    w_name = os.path.join(W_DIR,f_name)
 	    img = correct_imgs[i]
 	    imsave(w_name, img) # overwrite mode now !!!!
 	    if os.path.isfile(w_name):
-		print('%s has been saved at %s' % (f_name, w_dir))
+		print('%s has been saved at %s' % (f_name, W_DIR))
 	    else:
 		print('Sorry, somthing went wrong with your tif saving')
 		return
@@ -262,10 +277,10 @@ def run_calibration(sample, wavelength, exp_time=0.2 , num=10, **kwargs):
     if imgs.ndim ==3:
         img = np.sum(imgs,0)
     f_name = '_'.join(['calib', uid, timestamp, sample,'.tif'])
-    w_name = os.path.join(w_dir, f_name)
+    w_name = os.path.join(W_DIR, f_name)
     imsave(w_name, img)
     if os.path.isfile(w_name):
-        print('A summed image %s has been saved to %s' % (f_name, w_dir))
+        print('A summed image %s has been saved to %s' % (f_name, W_DIR))
     #print(str(check_output(['ls', '-1t', '|', 'head', '-n', '10'], shell=True)).replace('\\n', '\n'))
    
 
@@ -288,33 +303,33 @@ def load_calibration(config_file = False, config_dir = False):
 
     ###### setting up directory #######
     if not config_dir:
-        read_dir = r_dir
+        rear_dir = R_DIR
     else:
-        read_dir = str(config_dir)
+        rear_dir = str(config_dir)
     
     
     
     if not config_file: 
-    # reading most recent config file in the read_dir  ########
-        f_list = [ f for f in os.listdir(read_dir) if f.endswith('.cfg')]
+    # reading most recent config file in the rear_dir  ########
+        f_list = [ f for f in os.listdir(rear_dir) if f.endswith('.cfg')]
     
         f_dummy = []
         for f in f_list:
-            f_dummy.append(os.path.join(read_dir,f))
+            f_dummy.append(os.path.join(rear_dir,f))
 
         f_sort = sorted(f_dummy, key = os.path.getmtime)
         f_last = str(f_sort[-1])
         config_file = f_last
-        f_name = os.path.join(read_dir,config_file)
+        f_name = os.path.join(rear_dir,config_file)
         if len(config_file) >0:
-            print('Using '+ f_name +', the most recent config file that was found in ' +read_dir )
+            print('Using '+ f_name +', the most recent config file that was found in ' +rear_dir )
         else:
-            print('There is no file in '+ read_dir)
+            print('There is no file in '+ rear_dir)
     else:
-        f_name = os.path.join(read_dir,config_file)
+        f_name = os.path.join(rear_dir,config_file)
         
         if os.path.isfile(f_name):
-            print('Using user-supplied config file: '+config_file+' located at'+ read_dir)
+            print('Using user-supplied config file: '+config_file+' located at'+ rear_dir)
         else:
             print('Your config file ' + config_file +' is not found. Please check again your directory and file name')
             return
@@ -638,10 +653,11 @@ def get_dark_images(num = 600, cnt_time =0.5):
 
     for i in range(imgs.shape[0])
         f_name = '_'.join([uid, timestamp, dark,'00'+str(i)+'.tif'])
-        w_name = os.path.join(d_dir,f_name)
+        w_name = os.path.join(R_DIR,f_name)
         img = imgs[i]
         imsave(w_name, img) # overwrite mode now !!!!
         if not os.path.isfile(w_name):
-            print('Sorry, somthing went wrong when doing dark_image') # just quit, not printing
+            print('Sorry, something went wrong when doing dark_image') # just quit, not printing
             return
+
 
