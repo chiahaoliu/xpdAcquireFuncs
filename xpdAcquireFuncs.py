@@ -94,7 +94,11 @@ def save_tiff(headers, sum_frames = True):
 
         # get images and expo time from headers
         imgs = np.array(get_images(header,'pe1_image_lightfield'))
-        cnt_time = header.start.scan_info.exposure_time
+        try:
+            cnt_time = header.start.scan_info['exposure_time']
+        except KeyError:
+            print('exposure time in your scan is missing, use default 0.5 secs for dark image correction.')
+            cnt_time = 0.5
  
         # Identify the latest dark stack
         f_d = [ f for f in os.listdir(D_DIR) ]
@@ -113,10 +117,13 @@ def save_tiff(headers, sum_frames = True):
 
         ind = np.argsort(time_list)
         d_header = header_list[ind[-1]]
-        d_cnt = d_header.start.dark_scan_info.dark_exposure_time
+        try:
+            d_cnt = d_header.start.dark_scan_info['dark_exposure_time']
+        except KeyError: # temporarily, as data structure is not rigirous yet
+            d_cnt = d_header.start['dark_exposure_time']
             
         # dark correction
-        cnt_time = header.start.scan_info['exposure_time']
+        #cnt_time = header.start.scan_info['exposure_time']
         d_num = int(np.round(cnt_time / d_cnt))
         d_img_list = np.array(get_images(d_header,'pe1_image_lightfield')) # confirmed it comes with reverse order
         correct_imgs = []
@@ -190,7 +197,7 @@ def get_dark_images(num=600, cnt_time=0.5):
     time_stub = _timestampstr(header.stop.time)
     imgs = np.array(get_images(header,'pe1_image_lightfield'))
     mid = round(num/2)
-    for i in range(mid:mid+4):
+    for i in range(mid, mid+4, 1):
         f_name = '_'.join([uid, time_stub, 'dark','00'+str(i)+'.tif'])
         w_name = os.path.join(D_DIR,f_name)
         img = imgs[i]
@@ -305,7 +312,7 @@ def get_light_image(scan_time=1.0, exposure_time=0.5, scan_def=False, comments={
         exposure_time = 1.0
         num = int(scan_time/exposure_time) # should we find new exposure time?
     else:
-	num = int(scan_time/exposure_time)
+        num = int(scan_time/exposure_time)
 
     if num == 0: num = 1 # at least one scan
 
@@ -552,7 +559,7 @@ def time_search(startTime,stopTime=False,exp_day1=False,exp_day2=False):
     # date part
     if exp_day1:
         if exp_day2:
-          :/  d0 = exp_day1
+            d0 = exp_day1
             d1 = exp_day2
         else:
             d0 = exp_day1
