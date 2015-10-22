@@ -55,8 +55,6 @@ def meta_gen(fields, values):
     return metadata_dict
 
 
-
-
 def get_dark_images(num=600, cnt_time=0.5):
     ''' Manually acquire stacks of dark images that will be used for dark subtraction later
 
@@ -81,7 +79,7 @@ def get_dark_images(num=600, cnt_time=0.5):
     try:
         # fixme code to check that filter/shutter is closed.  If not, close it.
         ctscan = bluesky.scans.Count([pe1],num)
-        # ctscan.subs = LiveTable(['pe1'])
+        ctscan.subs = LiveTable(['pe1'])
         gs.RE(ctscan)
 
         gs.RE.md['isdark'] = False
@@ -97,10 +95,10 @@ def get_dark_images(num=600, cnt_time=0.5):
     # write images to tif file
     header = db[-1]
     uid = header.start.uid[:5]
-    timestamp = str(datetime.datetime.fromtimestamp(header.start.time))
+    time_stub = _timestampstr(header.stop.time)
     imgs = np.array(get_images(header,'pe1_image_lightfield'))
     for i in range(imgs.shape[0]):
-        f_name = '_'.join([uid, timestamp, 'dark','00'+str(i)+'.tif'])
+        f_name = '_'.join([uid, time_stub, 'dark','00'+str(i)+'.tif'])
         w_name = os.path.join(D_DIR,f_name)
         img = imgs[i]
         imsave(w_name, img) # overwrite mode 
@@ -137,16 +135,16 @@ def get_calibration_images(sample, wavelength, exposure_time=0.2 , num=10, **kwa
     
     try:
         ctscan = bluesky.scans.Count([pe1], num=num)
-        print('collecting calibration data. '+str(num)+' acquisitions of '+str(exp_time)+' s will be collected')
+        print('collecting calibration data. %s acquisitions of %s s will be collected' % (str(num),str(exposure_time)))
         ctscan.subs = LiveTable(['pe1_image_lightfield'])
         gs.RE(ctscan)
 
         # recover to previous state, set to values before calibration
         pe1.acquire_time = cnt_hold
         gs.RE.md['iscalibration'] = False
-        del(gs.RE.md['calibrant'])
+        #del(gs.RE.md['calibrant'])
         gs.RE.md['composition'] = sample_hold
-        del(gs.RE.md['calibration_scan_info'])
+        #del(gs.RE.md['calibration_scan_info'])
     except:
         # recover to previous state, set to values before calibration
         pe1.acquire_time = cnt_hold
@@ -208,11 +206,17 @@ def get_light_image(scan_time=1.0,exposure_time=0.5,scan_def=False,comments={}):
         num = num*exposures
            
     pe1.acquisition_time = exposure_time
-    gs.RE.md['sample']['temp'] = cs700.value[1]
-    gs.RE.md['scan_info']['exposure_time'] = exposure_time
-    gs.RE.md['scan_info']['number_of_exposures'] = num
-    gs.RE.md['scan_info']['total_scan_duration'] = num*exposure_time
-    gs.RE.md['scan_info']['detector'] = pe1
+    try:
+        gs.RE.md['sample']['temp']
+        gs.RE.md['scan_info']['exposure_time']
+    except KeyError:
+        gs.RE.md['sample'] = {}
+        gs.RE.md['scan_info'] = {}
+        gs.RE.md['sample']['temp'] = cs700.value[1]
+        gs.RE.md['scan_info']['exposure_time'] = exposure_time
+        gs.RE.md['scan_info']['number_of_exposures'] = num
+        gs.RE.md['scan_info']['total_scan_duration'] = num*exposure_time
+        #gs.RE.md['scan_info']['detector'] = pe1  # pe1 is not a simple object, call it directly causes I/O Error
     
     try:
         # fixme: code to check the filter/shutter is open
@@ -220,17 +224,22 @@ def get_light_image(scan_time=1.0,exposure_time=0.5,scan_def=False,comments={}):
         # note, do not close the shutter again afterwards, we will do it manually outside of this function
     
         # deconstruct the metadata
-        for key in comments.items():
-            del(gs.RE.md[key])
-        del(gs.RE.md['scan_info'])
-        gs.RE.md['sample']['temp'] = 0
+#        for key in comments.items():
+#            del(gs.RE.md[key])
+#        del(gs.RE.md['scan_info'])
+# fixme: need to think about data structure and then we decide how to recover
+# metadata
+#        gs.RE.md['sample']['temp'] = 0
+
+        save_tiff(db[-1])
+
     except:
         # deconstruct the metadata
-        for key in comments.items():
-            del(gs.RE.md[key])
-        del(gs.RE.md['scan_info'])
-        gs.RE.md['sample']['temp'] = 0
-        print('image collection failed.  check why gs.RE(scan) is not working and rerun')
+#        for key in comments.items():
+#            del(gs.RE.md[key])
+#        del(gs.RE.md['scan_info'])
+#        gs.RE.md['sample']['temp'] = 0
+        print('image collection failed. Check why gs.RE(scan) is not working and rerun')
         return
     
 def load_calibration(config_file = False, config_dir = False):
@@ -268,7 +277,7 @@ def load_calibration(config_file = False, config_dir = False):
         f_recent_time = os.path.getmtime(f_recent)
         config_file_stub = str(f_recent)
         f_name = os.path.join(rear_dir,config_file_stub)
-        if len(config_file) >0:
+        if len(f_sort) >0:
             print('Using '+ f_name +', the most recent config file that was found in ' +rear_dir )
         else:
             print('There is no ".cfg" file in '+rear_dir)
@@ -374,10 +383,10 @@ def table_gen(headers):
     comment_list = []
     uid_list = []
 
-    if type(headers) == list:
-        header_list = header_list
+    if type(list(headers)[1]) == str:
+        header_list = [headers]
     else:
-        header_list = list(headers)
+        header_list = headers
 
     for header in header_list:
         dummy = ''
@@ -544,10 +553,10 @@ def save_tiff(headers, sum_frames = True):
     # fixme check header_list is a list
     # if not, make header_list into a list with one element, then proceed
     # fixme this is much better than copy-pasting lines and lines of code.
-    if type(headers) == list:
-        header_list = headers
+    if type(list(headers)[1]) == str:
+        header_list = [headers]
     else:
-        header_list = list(headers)
+        header_list = headers
   
     # iterate over header(s)
     for header in header_list:
@@ -566,7 +575,7 @@ def save_tiff(headers, sum_frames = True):
            cal = header.start['calibration']
         except KeyError:
             pass
-        time_stub = timestampstr(header.stop.time)
+        time_stub =_timestampstr(header.stop.time)
 
         # get images and expo time from headers
         imgs = np.array(get_images(header,'pe1_image_lightfield'))
