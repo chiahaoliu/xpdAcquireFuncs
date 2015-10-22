@@ -281,13 +281,38 @@ def get_light_image(scan_time=1.0,exposure_time=0.5,scan_def=False,comments={}):
         extra_key = comments.keys()
         for key, value in comments.items():
             gs.RE.md[key] = value
-   
+    # don't expose the PE for more than 5 seconds max
+    if exposure_time > 5.0:
+        exposures = int(exposure_time)
+        exposure_time = 1.0
+        num = num*exposures
+           
     pe1.acquisition_time = exposure_time
     gs.RE.md['sample']['temp'] = cs700.value[1]
-    # fixme: code to check the filter/shutter is open
-    gs.RE(scan)
-    # note, do not close the shutter again afterwards, we will do it manually outside of this function
-
+    gs.RE.md['scan_info']['exposure_time'] = exposure_time
+    gs.RE.md['scan_info']['number_of_exposures'] = num
+    gs.RE.md['scan_info']['total_scan_duration'] = num*exposure_time
+    gs.RE.md['scan_info']['detector'] = pe1
+    
+    try:
+        # fixme: code to check the filter/shutter is open
+        gs.RE(scan)
+        # note, do not close the shutter again afterwards, we will do it manually outside of this function
+    
+        # deconstruct the metadata
+        for key in comments.items():
+            del(gs.RE.md[key]
+        del(gs.RE.md['scan_info'])
+        gs.RE.md['sample']['temp'] = 0
+    except:
+        # deconstruct the metadata
+        for key in comments.items():
+            del(gs.RE.md[key]
+        del(gs.RE.md['scan_info'])
+        gs.RE.md['sample']['temp'] = 0
+        print('image collection failed.  check why gs.RE(scan) is not working and rerun')
+        return
+    
 def load_calibration(config_file = False, config_dir = False):
     '''Function loads calibration values as metadata to save with scans
     
