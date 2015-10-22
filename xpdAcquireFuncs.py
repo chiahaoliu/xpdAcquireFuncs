@@ -139,7 +139,55 @@ def save_tiff(headers, summing = True):
                 else:
                     print('Sorry, something went wrong with your tif saving')
                 return
+                
+def get_dark_images(num=600, cnt_time=0.5):
+    ''' Manually acquire stacks of dark images that will be used for dark subtraction later
 
+    This module runs scans with the shutter closed (dark images) and saves them tagged
+    as such.  You shouldn't have to look at these, they will be automatically used later
+    for doing dark subtraction when you collect actual images.
+    
+    The default settings are to collect 5 minutes worth of dark scans in increments
+    of 0.5 seconds.  This default behavior can be overriden by providing optional
+    values for num (number of frames) and cnt_time.
+    
+    Arguments:
+       num - int - Optional. Number of dark frames to take.  Default = 600
+       cnt_time - float - Optional. exposure time for each frame. Default = 0.5 
+    '''
+    # set up scan
+    gs.RE.md['isdark'] = True
+    gs.RE.md['dark_scan_info'] = {'dark_exposure_time':cnt_time}   
+    cnt_hold = copy.copy(pe1.acquire_time)
+    pe1.acquire_time = cnt_time
+    
+    try:
+        ctscan = bluesky.scans.Count([pe1],num)
+        # ctscan.subs = LiveTable(['pe1'])
+        gs.RE(ctscan)
+
+        gs.RE.md['isdark'] = False
+        # delete dark_scan_info 
+        pe1.acquire_time = cnt_hold
+    except:
+        gs.RE.md['isdark'] = False
+        # delete dark_scan_info field
+        pe1.acquire_time = cnt_hold
+        
+    # write images to tif file
+    header = db[-1]
+    uid = header.start.uid[:5]
+    timestamp = str(datetime.datetime.fromtimestamp(header.start.time))
+    imgs = np.array(get_images(header,'pe1_image_lightfield'))
+    for i in range(imgs.shape[0]):
+        f_name = '_'.join([uid, timestamp, 'dark','00'+str(i)+'.tif'])
+        w_name = os.path.join(D_DIR,f_name)
+        img = imgs[i]
+        imsave(w_name, img) # overwrite mode 
+        if not os.path.isfile(w_name):
+            print('Error: dark image tif file not written')
+            print('Investigate and re-run')
+            return
 
 def get_calibration_images(sample, wavelength, exposure_time=0.2 , num=10, **kwargs):
     '''Runs a calibration dataset
@@ -212,6 +260,33 @@ def get_calibration_images(sample, wavelength, exposure_time=0.2 , num=10, **kwa
     if os.path.isfile(w_name):
         print('A summed image %s has been saved to %s' % (f_name, W_DIR))
    
+def get_light_image(scan_time=1.0,exposure_time=0.5,scan_def=False,comments={}):
+    '''function for getting a light image
+    
+    Arguments:
+        scan_time - float - optional. data collection time for the scan. Default = 1.0 seconds
+        exposure_time - float - optional. exposure time per frame.  number of exposures will be
+            computed as int(scan_time/exposure_time)
+        scan_def - bluesky scan object - optional. user can specify their own scan and pass it 
+            to the function.  Not specified in normal usage.
+        comments - dictionary - optional. dictionary of user defined key:value pairs.
+    '''
+    num = int(scan_time/exposure_time)
+    if num == 0: num = 1
+    if not scan_def:
+        scan = bluesky.scans.Count([pe1],num)
+    else:
+        scan = scan_def
+    if comments:
+        extra_key = comments.keys()
+        for key, value in comments.items():
+            gs.RE.md[key] = value
+   
+    pe1.acquisition_time = exposure_time
+    gs.RE.md['sample']['temp'] = cs700.value[1]
+    # fixme: code to check the filter/shutter is open
+    gs.RE(scan)
+    # note, do not close the shutter again afterwards, we will do it manually outside of this function
 
 def load_calibration(config_file = False, config_dir = False):
     '''Function loads calibration values as metadata to save with scans
@@ -232,14 +307,13 @@ def load_calibration(config_file = False, config_dir = False):
     normal usage is not to use change these defaults.
     '''
 
-    ###### setting up directory #######
     if not config_dir:
         rear_dir = R_DIR
     else:
         rear_dir = str(config_dir)
     
     if not config_file: 
-        # reading most recent config file in the rear_dir  ########
+        # reading most recent config file in the rear_dir 
         f_list = [ f for f in os.listdir(rear_dir) if f.endswith('.cfg')]
         f_dummy = []
         for f in f_list:
@@ -500,55 +574,6 @@ def prompt_save(name):
             else:
                 print('Sorry, something went wrong with your tif saving')
                 return
-
-def get_dark_images(num=600, cnt_time=0.5):
-    ''' Manually acquire stacks of dark images that will be used for dark subtraction later
-
-    This module runs scans with the shutter closed (dark images) and saves them tagged
-    as such.  You shouldn't have to look at these, they will be automatically used later
-    for doing dark subtraction when you collect actual images.
-    
-    The default settings are to collect 5 minutes worth of dark scans in increments
-    of 0.5 seconds.  This default behavior can be overriden by providing optional
-    values for num (number of frames) and cnt_time.
-    
-    Arguments:
-       num - int - Optional. Number of dark frames to take.  Default = 600
-       cnt_time - float - Optional. exposure time for each frame. Default = 0.5 
-    '''
-    # set up scan
-    gs.RE.md['isdark'] = True
-    gs.RE.md['dark_scan_info'] = {'dark_exposure_time':cnt_time}   
-    cnt_hold = copy.copy(pe1.acquire_time)
-    pe1.acquire_time = cnt_time
-    
-    try:
-        ctscan = bluesky.scans.Count([pe1],num)
-        # ctscan.subs = LiveTable(['pe1'])
-        gs.RE(ctscan)
-
-        gs.RE.md['isdark'] = False
-        # delete dark_scan_info 
-        pe1.acquire_time = cnt_hold
-    except:
-        gs.RE.md['isdark'] = False
-        # delete dark_scan_info field
-        pe1.acquire_time = cnt_hold
-        
-    # write images to tif file
-    header = db[-1]
-    uid = header.start.uid[:5]
-    timestamp = str(datetime.datetime.fromtimestamp(header.start.time))
-    imgs = np.array(get_images(header,'pe1_image_lightfield'))
-    for i in range(imgs.shape[0]):
-        f_name = '_'.join([uid, timestamp, 'dark','00'+str(i)+'.tif'])
-        w_name = os.path.join(D_DIR,f_name)
-        img = imgs[i]
-        imsave(w_name, img) # overwrite mode 
-        if not os.path.isfile(w_name):
-            print('Error: dark image tif file not written')
-            print('Investigate and re-run')
-            return
 
 def _timestampstr(timestamp):
     time= str(datetime.datetime.fromtimestamp(timestamp))
