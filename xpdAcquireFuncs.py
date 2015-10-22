@@ -54,6 +54,87 @@ def meta_gen(fields, values):
         metadata_dict[fields[i]] = values[i]
     return metadata_dict
 
+def save_tiff(headers, sum_frames = True):
+    ''' save images obtained from dataBroker as tiff format files
+    
+    arguments:
+        headers - list of header objects - obtained from a query to dataBroker
+        sum_frames - bool - frames will be summed if true
+    returns:
+        nothing
+    '''
+    # fixme check header_list is a list
+    # if not, make header_list into a list with one element, then proceed
+    # fixme this is much better than copy-pasting lines and lines of code.
+    if type(list(headers)[1]) == str:
+        header_list = [headers]
+    else:
+        header_list = headers
+  
+    # iterate over header(s)
+    for header in header_list:
+        dummy = ''
+        dummy_key_list = [e for e in header.start.keys() if e in feature_keys] 
+ 
+        for key in dummy_key_list:
+            dummy += str(header.start[key])+'_'      
+        feature = dummy[:-1]
+        uid_val = header.start.uid[:6]
+        try: 
+            comment = header.start['comments']
+        except KeyError:
+            pass
+        try: 
+           cal = header.start['calibration']
+        except KeyError:
+            pass
+        time_stub =_timestampstr(header.stop.time)
+
+        # get images and expo time from headers
+        imgs = np.array(get_images(header,'pe1_image_lightfield'))
+        cnt_time = header.start.acquire_time # fixme: need to see data structure
+ 
+        # Identify the latest dark stack
+        f_d = [ f for f in os.listdir(D_DIR) ]
+        f_dummy = []
+        for f in f_d:
+            f_dummy.append(os.path.join(D_DIR,f))
+        f_sort = sorted(f_dummy, key = os.path.getmtime)
+             
+        # get uid and look up cnt_time of target dark image
+        d_uid = f_sort[-1][:5]
+        d_cnt = db['d_uid'].start.dark_scan_info.dark_exposure_time
+            
+        # dark correction
+        d_num = int(np.round(cnt_time / d_cnt))
+        d_img_list = np.array(get_images(db['d_uid'],'pe1_image_lightfield')) # fixme: need to see if this list comes with reverse order
+        correct_imgs = []
+        for i in range(imgs.shape[0]):
+            correct_imgs.append(imgs[i]-np.sum(d_img_list[:d_num],0))
+        if sum_frames == True:
+            f_name = '_'.join([uid_val, timestamp, feature+'.tif'])
+            w_name = os.path.join(W_DIR,f_name)
+            img = np.sum(correct_imgs,0)
+            imsave(w_name, img) # overwrite mode now !!!!
+            if os.path.isfile(w_name):
+                print('%s has been saved at %s' % (f_name, W_DIR))
+            else:
+                print('Sorry, somthing went wrong with your tif saving')
+                return
+ 
+        elif sum_frames == False:
+            for i in range(correct_imgs.shape[0]):
+                f_name = '_'.join([uid_val, timestamp, feature,'00'+str(i)+'.tif'])
+                w_name = os.path.join(W_DIR,f_name)
+                img = correct_imgs[i]
+                imsave(w_name, img) # overwrite mode now !!!!
+                if os.path.isfile(w_name):
+                    print('%s has been saved at %s' % (f_name, W_DIR))
+                else:
+                    print('Sorry, something went wrong with your tif saving')
+                    return
+
+
 
 def get_dark_images(num=600, cnt_time=0.5):
     ''' Manually acquire stacks of dark images that will be used for dark subtraction later
@@ -541,83 +622,4 @@ def _timestampstr(timestamp):
 #    if not sample_temperature:
 #        temp = cs700.value[1]
 
-def save_tiff(headers, sum_frames = True):
-    ''' save images obtained from dataBroker as tiff format files
-    
-    arguments:
-        headers - list of header objects - obtained from a query to dataBroker
-        sum_frames - bool - frames will be summed if true
-    returns:
-        nothing
-    '''
-    # fixme check header_list is a list
-    # if not, make header_list into a list with one element, then proceed
-    # fixme this is much better than copy-pasting lines and lines of code.
-    if type(list(headers)[1]) == str:
-        header_list = [headers]
-    else:
-        header_list = headers
-  
-    # iterate over header(s)
-    for header in header_list:
-        dummy = ''
-        dummy_key_list = [e for e in header.start.keys() if e in feature_keys] 
- 
-        for key in dummy_key_list:
-            dummy += str(header.start[key])+'_'      
-        feature = dummy[:-1]
-        uid_val = header.start.uid[:6]
-        try: 
-            comment = header.start['comments']
-        except KeyError:
-            pass
-        try: 
-           cal = header.start['calibration']
-        except KeyError:
-            pass
-        time_stub =_timestampstr(header.stop.time)
-
-        # get images and expo time from headers
-        imgs = np.array(get_images(header,'pe1_image_lightfield'))
-        cnt_time = header.start.acquire_time # fixme: need to see data structure
- 
-        # Identify the latest dark stack
-        f_d = [ f for f in os.listdir(D_DIR) ]
-        f_dummy = []
-        for f in f_d:
-            f_dummy.append(os.path.join(D_DIR,f))
-        f_sort = sorted(f_dummy, key = os.path.getmtime)
-             
-        # get uid and look up cnt_time of target dark image
-        d_uid = f_sort[-1][:5]
-        d_cnt = db['d_uid'].start.dark_scan_info.dark_exposure_time
-            
-        # dark correction
-        d_num = int(np.round(cnt_time / d_cnt))
-        d_img_list = np.array(get_images(db['d_uid'],'pe1_image_lightfield')) # fixme: need to see if this list comes with reverse order
-        correct_imgs = []
-        for i in range(imgs.shape[0]):
-            correct_imgs.append(imgs[i]-np.sum(d_img_list[:d_num],0))
-        if sum_frames == True:
-            f_name = '_'.join([uid_val, timestamp, feature+'.tif'])
-            w_name = os.path.join(W_DIR,f_name)
-            img = np.sum(correct_imgs,0)
-            imsave(w_name, img) # overwrite mode now !!!!
-            if os.path.isfile(w_name):
-                print('%s has been saved at %s' % (f_name, W_DIR))
-            else:
-                print('Sorry, somthing went wrong with your tif saving')
-                return
- 
-        elif sum_frames == False:
-            for i in range(correct_imgs.shape[0]):
-                f_name = '_'.join([uid_val, timestamp, feature,'00'+str(i)+'.tif'])
-                w_name = os.path.join(W_DIR,f_name)
-                img = correct_imgs[i]
-                imsave(w_name, img) # overwrite mode now !!!!
-                if os.path.isfile(w_name):
-                    print('%s has been saved at %s' % (f_name, W_DIR))
-                else:
-                    print('Sorry, something went wrong with your tif saving')
-                    return
 
