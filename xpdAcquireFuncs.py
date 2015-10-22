@@ -141,7 +141,58 @@ def save_tiff(headers, summing = True):
                 else:
                     print('Sorry, something went wrong with your tif saving')
                 return
+                
+def get_dark_images(num=600, cnt_time=0.5):
+    ''' Manually acquire stacks of dark images that will be used for dark subtraction later
 
+    This module runs scans with the shutter closed (dark images) and saves them tagged
+    as such.  You shouldn't have to look at these, they will be automatically used later
+    for doing dark subtraction when you collect actual images.
+    
+    The default settings are to collect 5 minutes worth of dark scans in increments
+    of 0.5 seconds.  This default behavior can be overriden by providing optional
+    values for num (number of frames) and cnt_time.
+    
+    Arguments:
+       num - int - Optional. Number of dark frames to take.  Default = 600
+       cnt_time - float - Optional. exposure time for each frame. Default = 0.5 
+    '''
+    # set up scan
+    gs.RE.md['isdark'] = True
+    gs.RE.md['dark_scan_info'] = {'dark_exposure_time':cnt_time}   
+    cnt_hold = copy.copy(pe1.acquire_time)
+    pe1.acquire_time = cnt_time
+    
+    try:
+        # fixme code to check that filter/shutter is closed.  If not, close it.
+        ctscan = bluesky.scans.Count([pe1],num)
+        # ctscan.subs = LiveTable(['pe1'])
+        gs.RE(ctscan)
+
+        gs.RE.md['isdark'] = False
+        # delete dark_scan_info 
+        pe1.acquire_time = cnt_hold
+        # fixme code to to set filter/shutter back to initial state
+    except:
+        gs.RE.md['isdark'] = False
+        # delete dark_scan_info field
+        pe1.acquire_time = cnt_hold
+        # fixme code to to set filter/shutter back to initial state
+        
+    # write images to tif file
+    header = db[-1]
+    uid = header.start.uid[:5]
+    timestamp = str(datetime.datetime.fromtimestamp(header.start.time))
+    imgs = np.array(get_images(header,'pe1_image_lightfield'))
+    for i in range(imgs.shape[0]):
+        f_name = '_'.join([uid, timestamp, 'dark','00'+str(i)+'.tif'])
+        w_name = os.path.join(D_DIR,f_name)
+        img = imgs[i]
+        imsave(w_name, img) # overwrite mode 
+        if not os.path.isfile(w_name):
+            print('Error: dark image tif file not written')
+            print('Investigate and re-run')
+            return
 
 def get_calibration_images(sample, wavelength, exposure_time=0.2 , num=10, **kwargs):
     '''Runs a calibration dataset
@@ -214,58 +265,108 @@ def get_calibration_images(sample, wavelength, exposure_time=0.2 , num=10, **kwa
     if os.path.isfile(w_name):
         print('A summed image %s has been saved to %s' % (f_name, W_DIR))
    
-
+def get_light_image(scan_time=1.0,exposure_time=0.5,scan_def=False,comments={}):
+    '''function for getting a light image
+    
+    Arguments:
+        scan_time - float - optional. data collection time for the scan. Default = 1.0 seconds
+        exposure_time - float - optional. exposure time per frame.  number of exposures will be
+            computed as int(scan_time/exposure_time)
+        scan_def - bluesky scan object - optional. user can specify their own scan and pass it 
+            to the function.  Not specified in normal usage.
+        comments - dictionary - optional. dictionary of user defined key:value pairs.
+    '''
+    num = int(scan_time/exposure_time)
+    if num == 0: num = 1
+    if not scan_def:
+        scan = bluesky.scans.Count([pe1],num)
+    else:
+        scan = scan_def
+    if comments:
+        extra_key = comments.keys()
+        for key, value in comments.items():
+            gs.RE.md[key] = value
+    # don't expose the PE for more than 5 seconds max
+    if exposure_time > 5.0:
+        exposures = int(exposure_time)
+        exposure_time = 1.0
+        num = num*exposures
+           
+    pe1.acquisition_time = exposure_time
+    gs.RE.md['sample']['temp'] = cs700.value[1]
+    gs.RE.md['scan_info']['exposure_time'] = exposure_time
+    gs.RE.md['scan_info']['number_of_exposures'] = num
+    gs.RE.md['scan_info']['total_scan_duration'] = num*exposure_time
+    gs.RE.md['scan_info']['detector'] = pe1
+    
+    try:
+        # fixme: code to check the filter/shutter is open
+        gs.RE(scan)
+        # note, do not close the shutter again afterwards, we will do it manually outside of this function
+		    
+        # deconstruct the metadata
+        for key in comments.items():
+            del(gs.RE.md[key]
+        del(gs.RE.md['scan_info'])
+        gs.RE.md['sample']['temp'] = 0
+    except:
+        # deconstruct the metadata
+        for key in comments.items():
+            del(gs.RE.md[key]
+        del(gs.RE.md['scan_info'])
+        gs.RE.md['sample']['temp'] = 0
+        print('image collection failed.  check why gs.RE(scan) is not working and rerun')
+        return
+    
 def load_calibration(config_file = False, config_dir = False):
-    '''Function loads calibration values as BlueSky metadata
+    '''Function loads calibration values as metadata to save with scans
     
     takes calibration values from a SrXplanar config file and 
     loads them in the Bluesky global state run engine metadata dictionary. 
-    They will all automatically be saved.  
+    They will all automatically be saved with every run. 
     
     An example workflow is the following:
-    1) run_calibration('Ni',wavelength=0.1234)
+    1) get_calibration_images('Ni',wavelength=0.1234)
     2) open xPDFsuite and run the calibration in the SrXplanar module (green button
            in xPDFsuite).  See SrXplanar help documentation for more info.
+    3) write the calibration data to an xPDFsuite config file in config_base directory
     
     Arguments:
-    config_file - str - name of your desired config file. If unspecified, most recent one will be used
-    config_dir - str - directory where your config files located at. If unspecified, default directory is used
+    config_file - str - name of your desired config file. If unspecified, the most recent one will be used
+    config_dir - str - directory where your config files are located. If unspecified, default directory is used
+    normal usage is not to use change these defaults.
     '''
 
-    ###### setting up directory #######
     if not config_dir:
         rear_dir = R_DIR
     else:
         rear_dir = str(config_dir)
     
-    
-    
     if not config_file: 
-    # reading most recent config file in the rear_dir  ########
+        # reading most recent config file in the rear_dir 
         f_list = [ f for f in os.listdir(rear_dir) if f.endswith('.cfg')]
-    
         f_dummy = []
         for f in f_list:
             f_dummy.append(os.path.join(rear_dir,f))
-
         f_sort = sorted(f_dummy, key = os.path.getmtime)
-        f_last = str(f_sort[-1])
-        config_file = f_last
-        f_name = os.path.join(rear_dir,config_file)
+        f_recent = f_sort[-1]
+        f_recent_time = os.path.getmtime(f_recent)
+        config_file_stub = str(f_recent)
+        f_name = os.path.join(rear_dir,config_file_stub)
         if len(config_file) >0:
             print('Using '+ f_name +', the most recent config file that was found in ' +rear_dir )
         else:
-            print('There is no file in '+ rear_dir)
+            print('There is no ".cfg" file in '+rear_dir)
+            print('make sure the config file has been written in that directory and has extension ".cfg"')
     else:
         f_name = os.path.join(rear_dir,config_file)
-        
         if os.path.isfile(f_name):
-            print('Using user-supplied config file: '+config_file+' located at'+ rear_dir)
+            print('Using user-supplied config file: '+config_file+' located in'+rear_dir)
         else:
-            print('Your config file ' + config_file +' is not found. Please check again your directory and file name')
+            print('Your config file '+config_file+' is not found. Please check again your directory and file name')
             return
     
-    ###### read config file into a dirctionary ######
+    # read config file into a dirctionary
     config = ConfigParser()
     config.read(f_name)
     sections = config.sections()
@@ -281,55 +382,45 @@ def load_calibration(config_file = False, config_dir = False):
             except:
                 print("exception on %s!" % option)
                 config_dict[option] = None
+    gs.RE.md['calibration_information'] = {'from_calibration_file':str(config_file),'calib_file_creation_date':f_recent_time,
+            'config_data':config_dict}
     
-    gs.RE.md['config'] = config_dict
-    gs.RE.md['calibration'] = str(config_file)
-    
-    print('Calibration metadata has been successfully save as a dictionary in config field; use gs.RE.md to check.')
-    print('Subsequent scans will carry the calibration data in their metadata stores until load_calibration() is run again.')
+    print('Calibration metadata will be saved in dictionary "calibration_information" with subsequent scans. type gs.RE.md to check.')
+    print('Run load_calibration() again on a different config file to update')
     
 
-def config_md(user=False, sample, comments=False, temperature = False, **kwargs):
+def new_sample(sample, experimenters=[], comments={}, verbose = 1):
     '''configure metadata field for your runengine
     
+    This function sets up persistent metadata that will be saved with subsequent scans, 
+    including a list of experimenters and the sample composition, as well as other user
+    defined comments.  It can be rerun multiple times until you are happy with the settings,
+    then these settings will be applied to scan metadata when the scans are run later.
+    
     Arguments:
+
     user - str or list - current user name(s), if it is not specified, current value will be used
     sample - str or list - current sample
     comments - str - comments to current experiment
     *kargs - str - any fields you want to update in metadata dictionary
-    '''
-    if not temperature:
-        temp = str(cs700.value[1])+'K'
-    else:
-        temp = str(temperature) # user defined value
-    if type(sample) == str:
-       #fixme : parsing elements
+    sample - str - current sample
+    experimenters - list - optional. list of current experimenter(s). reuse current value if not given
+    comments - dict - optional. user supplied comments that relate to the current sample. Default = ''
+    verbose - bool - optional. set to false to suppress printed output.
+    ''' 
+    if verbose: print('Setting up global run engines(gs.RE) with your metadata.......')
+    gs.RE.md['sample']['composition'] = sample    
+    if not experimenters:
+        experimenters = gs.RE.md['experimenters']
+        print('current experimenters is/are '+experimenters)
+        print('to change experimenters, rerun new_sample giving a list of experimenters as an argument')    
     
-    # confiure user
-    if not user:
-        pass
-    else:
-        gs.RE.md['experimenter_name'] = user
-    # write metadata diectionray
-    gs.RE.md['composition'] = sample
-    gs.RE.md['temperature'] = temp
-    gs.RE.md['date'] = str(datetime.datetime.today().date())
-    
-    if not Comments:
-        gs.RE.md['comments'] = ''
-    else:    
-        gs.RE.md['comments'] = Comments
-    
-    # user define keys
-    for key, value in kwargs.items():
-        gs.RE.md[key] = value
+    gs.RE.md['sample_load_time'] = str(datetime.datetime.today().date().time()) #fixme, get timestamp from central clock through bluesky
+    gs.RE.md['sample']['comments'] = comments
 
-    print('Your metadata dictionary is %s' % gs.RE.md)
-    time.sleep(0.5)
-    print('Setting up global run engines(gs.RE) with your metadata.......')
-    time.sleep(0.5)
-    print('global runengine states have been updated')
-    print('Initialization finished.')
+    if verbose: print('Sample and experimenter metadata set')
+    if verbose: print('To check what will be saved with your scans, type "gs.RE.md"')
+
     
 def and_search(**kwargs):
     '''generate mongoDB recongnizable query of "and_search" and rerutn data
@@ -342,6 +433,9 @@ def and_search(**kwargs):
         exactly located at.
         
         Note: Please type in fields and corresponding values of desired search with exact order
+
+    Returns:
+        list of bluesky header objects
     '''
     dict_gen = {}
     
@@ -356,7 +450,7 @@ def and_search(**kwargs):
     return and_header
     
 def table_gen(headers):
-    ''' Takes in a header list generated by search functions and return a talbe
+    ''' Takes in a header list generated by search functions and return a table
     with metadata information
     
     Argument:
@@ -461,10 +555,6 @@ def time_search(startTime,stopTime=False,exp_day1=False,exp_day2=False):
     event_time = get_events(header_time, fill=False) 
     event_time = list(event_time)
     
-#    time_query = {'start_time':timeHead, 'stop_time':timeTail}
-#    time_search = db(**time_query)
-#    time_out = get_events(time_search, fill=False)
-#    time_out = list(time_out)
     print('||You assign a time search in the period:\n'+str(timeHead)+' and '+str(timeTail)+'||' )
     print('||Your search gives out '+str(len(event_time))+' results||')
           
@@ -473,9 +563,8 @@ def time_search(startTime,stopTime=False,exp_day1=False,exp_day2=False):
 
 def sanity_check(user_in=None):
     user = gs.RE.md['experimenter_name']
-    compo = gs.RE.md['composition']
-    calib = gs.RE.md['calibration']
-    time = str(datetime.datetime.now())
+    compo = gs.RE.md['sample']['composition']
+    calib_file = gs.RE.md['calibration_information']['from_calibration_file']
     
     print('Hey '+user+' ,current sample is: '+compo+', calibration file is using: '+calib+', time is: '+time)
     uin= input('Is it correct? y/n')
@@ -572,3 +661,6 @@ def _timestampstr(timestamp):
 # Holding place
     #print(str(check_output(['ls', '-1t', '|', 'head', '-n', '10'], shell=True)).replace('\\n', '\n'))
     #gs.RE.md.past({'field':'value'})
+#    if not sample_temperature:
+#        temp = cs700.value[1]
+
