@@ -162,6 +162,7 @@ def get_dark_images(num=600, cnt_time=0.5):
     pe1.acquire_time = cnt_time
     
     try:
+        # fixme code to check that filter/shutter is closed.  If not, close it.
         ctscan = bluesky.scans.Count([pe1],num)
         # ctscan.subs = LiveTable(['pe1'])
         gs.RE(ctscan)
@@ -169,10 +170,12 @@ def get_dark_images(num=600, cnt_time=0.5):
         gs.RE.md['isdark'] = False
         # delete dark_scan_info 
         pe1.acquire_time = cnt_hold
+        # fixme code to to set filter/shutter back to initial state
     except:
         gs.RE.md['isdark'] = False
         # delete dark_scan_info field
         pe1.acquire_time = cnt_hold
+        # fixme code to to set filter/shutter back to initial state
         
     # write images to tif file
     header = db[-1]
