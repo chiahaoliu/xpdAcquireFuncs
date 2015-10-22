@@ -32,7 +32,7 @@ import localimports
 pd.set_option('colheader_justify','left')
 
 default_keys = ['owner', 'beamline_id', 'group', 'config', 'scan_id'] # required by dataBroker
-feature_keys = ['composition', 'temperature', 'experimenter_name'] # required by XPD
+feature_keys = ['composition', 'experimenter_name'] # required by XPD
 
 # These are the default directory paths on the XPD data acquisition computer.  Change if needed here
 W_DIR = '/home/xf28id1/xpdUser/tif_base'                # where the user-requested tif's go.  Local drive
@@ -56,71 +56,74 @@ def meta_gen(fields, values):
         metadata_dict[fields[i]] = values[i]
     return metadata_dict
 
-def save_tiff(headers, summing = True):
+def save_tiff(headers, sum_frames = True):
     ''' save images obtained from dataBroker as tiff format files
     
     arguments:
-        header_list - list of header objects - obtained from a query to dataBroker
-        summing - bool - frames will be summed if true
+        headers - list of header objects - obtained from a query to dataBroker
+        sum_frames - bool - frames will be summed if true
     returns:
         nothing
     '''
     # fixme check header_list is a list
     # if not, make header_list into a list with one element, then proceed
     # fixme this is much better than copy-pasting lines and lines of code.
-    if type(headers) == list:
-        header_list = headers
+    if type(list(headers)[1]) == str:
+        header_list = [headers]
     else:
-        header_list = list(headers)
- 
+        header_list = headers
+  
     # iterate over header(s)
     for header in headers:
         dummy = ''
-        dummy_key_list = [e for e in header.start.keys() if e in feature_keys] # stroe a list independently
-
-	for key in dummy_key_list:
+        dummy_key_list = [e for e in header.start.keys() if e in feature_keys] 
+ 
+        for key in dummy_key_list:
             dummy += str(header.start[key])+'_'      
         feature = dummy[:-1]
-        uid_val = header.start.uid[:6]
+        uid_val = header.start.uid[:5]
         try: 
             comment = header.start['comments']
         except KeyError:
             pass
         try: 
-            cal = header.start['calibration']
+           cal = header.start['calibration']
         except KeyError:
             pass
-        time= str(datetime.datetime.fromtimestamp(header.stop.time))
-        date = time[:10]
-        hour = time[11:16]
-        timestamp = '_'.join([date, hour])
-            
+        time_stub =_timestampstr(header.stop.time)
+
         # get images and expo time from headers
         imgs = np.array(get_images(header,'pe1_image_lightfield'))
-        cnt_time = header.start.acquire_time
-
+        cnt_time = header.start.scan_info.exposure_time
+ 
         # Identify the latest dark stack
         f_d = [ f for f in os.listdir(D_DIR) ]
-        f_dummy = []
+        uid_list = []
         for f in f_d:
-            f_dummy.append(os.path.join(D_DIR,f))
-        f_sort = sorted(f_dummy, key = os.path.getmtime)
-             
-        # get uid and look up cnt_time of target dark image
-        d_uid = f_sort[-1][:5]
-        d_cnt = db['d_uid'].start.dark_scan_info.dark_exposure_time
-            
+            uid_list.append(f[:5]) # get uids in dark base
+        uid_unique = np.unique(uid_list)
+
+        header_list = []
+        for uid in uid_list:
+            header_list.append(db[uid])
+
+        time_list = []
+        for header in header_list:
+            time_list.append(header.stop.time)
+
+        ind = np.argsort(time_list)
+        d_header = header_list[ind[-1]]
+        d_cnt = d_header.start.dark_scan_info.dark_exposure_time
             
         # dark correction
+        cnt_time = header.start.scan_info['exposure_time']
         d_num = int(np.round(cnt_time / d_cnt))
-        d_img_list = np.array(get_images(db['d_uid'],'pe1_image_lightfield')) # fixme: need to see if this list comes with reverse order
-
+        d_img_list = np.array(get_images(d_header,'pe1_image_lightfield')) # confirmed it comes with reverse order
         correct_imgs = []
         for i in range(imgs.shape[0]):
-            correct_imgs.append(imgs[i]-np.sum(d_img_list[:d_num],0)
-             
-        if summing == True:
-            f_name = '_'.join([uid_val, timestamp, feature+'.tif'])
+            correct_imgs.append(imgs[i]-np.sum(d_img_list[d_num:],0)) # use the last ones
+        if sum_frames == True:
+            f_name = '_'.join([uid_val, time_stub, feature+'.tif'])
             w_name = os.path.join(W_DIR,f_name)
             img = np.sum(correct_imgs,0)
             imsave(w_name, img) # overwrite mode now !!!!
@@ -129,10 +132,10 @@ def save_tiff(headers, summing = True):
             else:
                 print('Sorry, somthing went wrong with your tif saving')
                 return
-
-        elif summing == False:
+ 
+        elif sum_frames == False:
             for i in range(correct_imgs.shape[0]):
-                f_name = '_'.join([uid_val, timestamp, feature,'00'+str(i)+'.tif'])
+                f_name = '_'.join([uid_val, time_stub, feature,'00'+str(i)+'.tif'])
                 w_name = os.path.join(W_DIR,f_name)
                 img = correct_imgs[i]
                 imsave(w_name, img) # overwrite mode now !!!!
@@ -140,8 +143,10 @@ def save_tiff(headers, summing = True):
                     print('%s has been saved at %s' % (f_name, W_DIR))
                 else:
                     print('Sorry, something went wrong with your tif saving')
-                return
-                
+                    return
+
+
+
 def get_dark_images(num=600, cnt_time=0.5):
     ''' Manually acquire stacks of dark images that will be used for dark subtraction later
 
@@ -159,14 +164,14 @@ def get_dark_images(num=600, cnt_time=0.5):
     '''
     # set up scan
     gs.RE.md['isdark'] = True
-    gs.RE.md['dark_scan_info'] = {'dark_exposure_time':cnt_time}   
     cnt_hold = copy.copy(pe1.acquire_time)
     pe1.acquire_time = cnt_time
+    gs.RE.md['dark_scan_info'] = {'dark_exposure_time':cnt_time}   
     
     try:
         # fixme code to check that filter/shutter is closed.  If not, close it.
         ctscan = bluesky.scans.Count([pe1],num)
-        # ctscan.subs = LiveTable(['pe1'])
+        ctscan.subs = LiveTable(['pe1_image_lightfield'])
         gs.RE(ctscan)
 
         gs.RE.md['isdark'] = False
@@ -178,14 +183,15 @@ def get_dark_images(num=600, cnt_time=0.5):
         # delete dark_scan_info field
         pe1.acquire_time = cnt_hold
         # fixme code to to set filter/shutter back to initial state
-        
-    # write images to tif file
+
+    # write images to tif file, only save 3 images in the middle as a hoook and data interogation
     header = db[-1]
     uid = header.start.uid[:5]
-    timestamp = str(datetime.datetime.fromtimestamp(header.start.time))
+    time_stub = _timestampstr(header.stop.time)
     imgs = np.array(get_images(header,'pe1_image_lightfield'))
-    for i in range(imgs.shape[0]):
-        f_name = '_'.join([uid, timestamp, 'dark','00'+str(i)+'.tif'])
+    mid = round(num/2)
+    for i in range(mid:mid+4):
+        f_name = '_'.join([uid, time_stub, 'dark','00'+str(i)+'.tif'])
         w_name = os.path.join(D_DIR,f_name)
         img = imgs[i]
         imsave(w_name, img) # overwrite mode 
@@ -206,23 +212,31 @@ def get_calibration_images(sample, wavelength, exposure_time=0.2 , num=10, **kwa
             this to set global metadata, only use it to add information about the calibration
             It gets stored in the 'calibration_scan_info' dictionary.
     '''
-     
-    cnt_hold = copy.copy(pe1.acquire_time)
-    sample_hold = copy.copy(gs.RE.md['composition'])
-    pe1.acquire_time = 0.2
+
+    # Prepare hold state
+    try: 
+        composition_hold = copy.copy(gs.RE.md['sample']['composition'])	
+        sample_hold = copy.copy(gs.RE.md['sample'])    
+    except KeyError:
+        composition_hold = ""
+        sample_hold = ""
+    cnt_hold = copy.copy(pe1.acqure_time)
+
+
     gs.RE.md['iscalibration'] = True
     gs.RE.md['calibrant'] = sample
-    gs.RE.md['composition'] = sample
-    gs.RE.md['wavelength'] = wavelength
-    gs.RE.md['calibration_scan_info'] = {'acquisition_time':exposure_time,'num_calib_exposures':num}
-    # extra field define whatever you want
+    gs.RE.md['sample'] = sample
+    gs.RE.md['sample']['composition'] = sampple # fixme, in the future, this should be a parsed field: ['phase1':{'Na',1},'phase2':{'Cl':1}]
+    gs.RE.md['calibration_information']['calibration_scan_info'] = {'acquisition_time':exposure_time,'num_calib_exposures':num,'wavelength':wavelength}
+    
+    # extra fields, gives user freedom
     extra_key = kwargs.keys()
     for key, value in kwargs.items():
-        gs.RE.md['calibration_scan_info'][key] = value
+        gs.RE.md['user_supplied'][key] = value
     
     try:
         ctscan = bluesky.scans.Count([pe1], num=num)
-        print('collecting calibration data. '+str(num)+' acquisitions of '+str(exp_time)+' s will be collected')
+        print('collecting calibration data. %s acquisitions of %s s will be collected' % (str(num),str(exposure_time)))
         ctscan.subs = LiveTable(['pe1_image_lightfield'])
         gs.RE(ctscan)
 
@@ -230,15 +244,13 @@ def get_calibration_images(sample, wavelength, exposure_time=0.2 , num=10, **kwa
         pe1.acquire_time = cnt_hold
         gs.RE.md['iscalibration'] = False
         del(gs.RE.md['calibrant'])
-        gs.RE.md['composition'] = sample_hold
-        del(gs.RE.md['calibration_scan_info'])
-    except:
+        gs.RE.md['composition'] = composition_hold
+    except KeyError:
         # recover to previous state, set to values before calibration
         pe1.acquire_time = cnt_hold
         gs.RE.md['iscalibration'] = False
         del(gs.RE.md['calibrant'])
-        gs.RE.md['composition'] = sample_hold
-        del(gs.RE.md['calibration_scan_info'])
+        gs.RE.md['sample']['composition'] = composition_hold
         print('scan failed. metadata dictionary reset to starting values.') 
         print('To debug, try running some scans using ctscan=bluesky.scans.Count([pe1])')
         print('then gs.RE(ctscan).  When it is working, rerun get_calibration_images()')
@@ -265,7 +277,7 @@ def get_calibration_images(sample, wavelength, exposure_time=0.2 , num=10, **kwa
     if os.path.isfile(w_name):
         print('A summed image %s has been saved to %s' % (f_name, W_DIR))
    
-def get_light_image(scan_time=1.0,exposure_time=0.5,scan_def=False,comments={}):
+def get_light_image(scan_time=1.0, exposure_time=0.5, scan_def=False, comments={}):
     '''function for getting a light image
     
     Arguments:
@@ -276,46 +288,58 @@ def get_light_image(scan_time=1.0,exposure_time=0.5,scan_def=False,comments={}):
             to the function.  Not specified in normal usage.
         comments - dictionary - optional. dictionary of user defined key:value pairs.
     '''
-    num = int(scan_time/exposure_time)
-    if num == 0: num = 1
+    
     if not scan_def:
         scan = bluesky.scans.Count([pe1],num)
     else:
         scan = scan_def
+    
     if comments:
         extra_key = comments.keys()
         for key, value in comments.items():
-            gs.RE.md[key] = value
-    # don't expose the PE for more than 5 seconds max
+            gs.RE.md['user_supplied'][key] = value
+    
+    # don't expose the PE for more than 5 seconds max, set it to 1 seconds if you go beyond limit
     if exposure_time > 5.0:
-        exposures = int(exposure_time)
+        #exposures = int(exposure_time)
         exposure_time = 1.0
-        num = num*exposures
-           
+        num = int(scan_time/exposure_time) # should we find new exposure time?
+    else:
+	num = int(scan_time/exposure_time)
+
+    if num == 0: num = 1 # at least one scan
+
     pe1.acquisition_time = exposure_time
-    gs.RE.md['sample']['temp'] = cs700.value[1]
-    gs.RE.md['scan_info']['exposure_time'] = exposure_time
-    gs.RE.md['scan_info']['number_of_exposures'] = num
-    gs.RE.md['scan_info']['total_scan_duration'] = num*exposure_time
-    gs.RE.md['scan_info']['detector'] = pe1
+
+    try:
+        gs.RE.md['sample']['temp']
+        gs.RE.md['scan_info']['exposure_time']
+    except KeyError:
+        gs.RE.md['sample'] = {}
+        gs.RE.md['scan_info'] = {}
+        gs.RE.md['sample']['temp'] = cs700.value[1]
+        gs.RE.md['scan_info']['exposure_time'] = exposure_time
+        gs.RE.md['scan_info']['number_of_exposures'] = num
+        gs.RE.md['scan_info']['total_scan_duration'] = num*exposure_time
+        #gs.RE.md['scan_info']['detector'] = pe1  # pe1 is not a simple object, call it directly causes I/O Error
     
     try:
         # fixme: code to check the filter/shutter is open
         gs.RE(scan)
+        save_tiff(db[-1])
         # note, do not close the shutter again afterwards, we will do it manually outside of this function
 		    
         # deconstruct the metadata
-        for key in comments.items():
-            del(gs.RE.md[key])
-        del(gs.RE.md['scan_info'])
+        gs.RE.md['scan_info'] = {} # give it a blank dictionary for rubustness
+        gs.RE.md['user_supplied'] = {}
         gs.RE.md['sample']['temp'] = 0
+
     except:
         # deconstruct the metadata
-        for key in comments.items():
-            del(gs.RE.md[key])
-        del(gs.RE.md['scan_info'])
+        gs.RE.md['scan_info'] = {} # give it a blank dictionary for rubustness
+        gs.RE.md['user_supplied'] = {}
         gs.RE.md['sample']['temp'] = 0
-        print('image collection failed.  check why gs.RE(scan) is not working and rerun')
+        print('image collection failed. Check why gs.RE(scan) is not working and rerun')
         return
     
 def load_calibration(config_file = False, config_dir = False):
@@ -332,8 +356,8 @@ def load_calibration(config_file = False, config_dir = False):
     3) write the calibration data to an xPDFsuite config file in config_base directory
     
     Arguments:
-    config_file - str - name of your desired config file. If unspecified, the most recent one will be used
-    config_dir - str - directory where your config files are located. If unspecified, default directory is used
+    config_file -str - optional. name of your desired config file. If unspecified, the most recent one will be used
+    config_dir - str - optional. directory where your config files are located. If unspecified, default directory is used
     normal usage is not to use change these defaults.
     '''
 
@@ -353,7 +377,7 @@ def load_calibration(config_file = False, config_dir = False):
         f_recent_time = os.path.getmtime(f_recent)
         config_file_stub = str(f_recent)
         f_name = os.path.join(rear_dir,config_file_stub)
-        if len(config_file) >0:
+        if len(f_sort) >0:
             print('Using '+ f_name +', the most recent config file that was found in ' +rear_dir )
         else:
             print('There is no ".cfg" file in '+rear_dir)
@@ -388,6 +412,13 @@ def load_calibration(config_file = False, config_dir = False):
     print('Calibration metadata will be saved in dictionary "calibration_information" with subsequent scans. type gs.RE.md to check.')
     print('Run load_calibration() again on a different config file to update')
     
+def new_user(user_list):
+    ''' This function sets up experimenter name(s). This function can be run at anytime to change experimenter global setting
+    Argument:
+        user_list - str or list - name of current experimenters
+    '''
+    gs.RE.md['experimenter'] = user_list
+
 
 def new_sample(sample, experimenters=[], comments={}, verbose = 1):
     '''configure metadata field for your runengine
@@ -464,10 +495,10 @@ def table_gen(headers):
     comment_list = []
     uid_list = []
 
-    if type(headers) == list:
-        header_list = header_list
+    if type(list(headers)[1]) == str:
+        header_list = [headers]
     else:
-        header_list = list(headers)
+        header_list = headers
 
     for header in header_list:
         dummy = ''
@@ -663,4 +694,5 @@ def _timestampstr(timestamp):
     #gs.RE.md.past({'field':'value'})
 #    if not sample_temperature:
 #        temp = cs700.value[1]
+
 
