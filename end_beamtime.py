@@ -50,7 +50,7 @@ def end_beamtime():
     print(W_DIR)
     print(R_DIR)
     print(D_DIR)
-    print('to:)
+    print('to:')
     print(todir_w)
     print(todir_r)
     print(todir_d)
