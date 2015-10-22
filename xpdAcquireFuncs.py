@@ -306,13 +306,13 @@ def get_light_image(scan_time=1.0,exposure_time=0.5,scan_def=False,comments={}):
 		    
         # deconstruct the metadata
         for key in comments.items():
-            del(gs.RE.md[key]
+            del(gs.RE.md[key])
         del(gs.RE.md['scan_info'])
         gs.RE.md['sample']['temp'] = 0
     except:
         # deconstruct the metadata
         for key in comments.items():
-            del(gs.RE.md[key]
+            del(gs.RE.md[key])
         del(gs.RE.md['scan_info'])
         gs.RE.md['sample']['temp'] = 0
         print('image collection failed.  check why gs.RE(scan) is not working and rerun')
