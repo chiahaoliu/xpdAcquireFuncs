@@ -678,55 +678,6 @@ def prompt_save(name,doc):
                 print('Sorry, something went wrong with your tif saving')
                 return
 
-def get_dark_images(num=600, cnt_time=0.5):
-    ''' Manually acquire stacks of dark images that will be used for dark subtraction later
-
-    This module runs scans with the shutter closed (dark images) and saves them tagged
-    as such.  You shouldn't have to look at these, they will be automatically used later
-    for doing dark subtraction when you collect actual images.
-    
-    The default settings are to collect 5 minutes worth of dark scans in increments
-    of 0.5 seconds.  This default behavior can be overriden by providing optional
-    values for num (number of frames) and cnt_time.
-    
-    Arguments:
-       num - int - Optional. Number of dark frames to take.  Default = 600
-       cnt_time - float - Optional. exposure time for each frame. Default = 0.5 
-    '''
-    # set up scan
-    gs.RE.md['isdark'] = True
-    gs.RE.md['dark_scan_info'] = {'dark_exposure_time':cnt_time}   
-    cnt_hold = copy.copy(pe1.acquire_time)
-    pe1.acquire_time = cnt_time
-    
-    try:
-        ctscan = bluesky.scans.Count([pe1],num)
-        # ctscan.subs = LiveTable([pe1])
-        gs.RE(ctscan)
-
-        gs.RE.md['isdark'] = False
-        # delete dark_scan_info 
-        pe1.acquire_time = cnt_hold
-    except:
-        gs.RE.md['isdark'] = False
-        # delete dark_scan_info field
-        pe1.acquire_time = cnt_hold
-        
-    # write images to tif file
-    header = db[-1]
-    uid = header.start.uid[:5]
-    timestamp = str(datetime.datetime.fromtimestamp(header.start.time))
-    imgs = np.array(get_images(header,'pe1_image_lightfield'))
-    for i in range(imgs.shape[0]):
-        f_name = '_'.join([uid, timestamp, 'dark','00'+str(i)+'.tif'])
-        w_name = os.path.join(D_DIR,f_name)
-        img = imgs[i]
-        imsave(w_name, img) # overwrite mode 
-        if not os.path.isfile(w_name):
-            print('Error: dark image tif file not written')
-            print('Investigate and re-run')
-            return
-
 def _timestampstr(timestamp):
     time= str(datetime.datetime.fromtimestamp(timestamp))
     date = time[:10]
