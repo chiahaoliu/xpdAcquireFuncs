@@ -32,21 +32,22 @@ import localimports
 pd.set_option('colheader_justify','left')
 
 default_keys = ['owner', 'beamline_id', 'group', 'config', 'scan_id'] # required by dataBroker
-feature_keys = ['experimenters'] # required by XPD, time_stub and uid will be automatically added up as well
+feature_keys = ['sample_name','experimenters'] # required by XPD, time_stub and uid will be automatically added up as well
 #fixme: remove sample field just for temporily useage
 
 # These are the default directory paths on the XPD data acquisition computer.  Change if needed here
 W_DIR = '/home/xf28id1/xpdUser/tif_base'                # where the user-requested tif's go.  Local drive
 R_DIR = '/home/xf28id1/xpdUser/config_base'             # where the xPDFsuite generated config files go.  Local drive
 D_DIR = '/home/xf28id1/xpdUser/dark_base'               # where the tifs from dark-field collections go. Local drive
+S_DIR = '/home/xf28id1/xpdUser/script_base'             # where the user scripts go. Local drive
 
 #fixme seach !
 
-def _file_name_gen(header):
+def _filename_gen(header):
     ''' generate a human readible file name
     '''
     uid = header.start.uid
-    time_stub = header.start.time
+    time_stub = _timestampstr(header.start.time)
 
     dummy_list = []
     for key in feature_keys:
@@ -68,10 +69,37 @@ def _file_name_gen(header):
         feature += str(inter_list.pop())
         i += 1
 
-    f_name = "_".join([uid[:5], time_stub, feature[:-1]])
+    f_name = "_".join([time_stub, uid[:5], feature])
     return f_name
 
+def _MD_template():
+    ''' use to generate idealized metadata structure, for pictorial memory and
+    also for data cleaning.
+    '''
+    _clean_metadata()
+    gs.RE.md['iscalib'] = 0
+    gs.RE.md['isdark'] = 0
+    gs.RE.md['sample_name'] = ''
+    gs.RE.md['calibrant'] = '' # transient, only for calibration set
+    gs.RE.md['user_supply'] = {}
 
+    gs.RE.md['sample'] = {}
+    gs.RE.md['sample']['composition'] = {}
+    
+    gs.RE.md['dark_sacn_info'] = {}
+
+    gs.RE.md['scan_info'] = {}
+    
+    gs.RE.md['calibration_scan_info'] = {}
+    gs.RE.md['calibration_scan_info']['calibration_information'] = {}
+
+    return gs.RE.md
+    
+def sacn_info():
+    all_sacn_info = [gs.RE.md.scan_info['exposure_time'],
+            gs.RE.md.calibrationscan_info['calibration_exposure_time'],
+            gs.RE.md.dark_scan_info['dark_exposure_time']]
+    return print('scan exposure time is %s, calibration exposure time is %s, dark scan exposure time is %s' % (all_scan_info[0], all_scan_info[1], all_scan_info[2]))
 
 def meta_gen(fields, values):
     '''generate metadata dictionary used in your run engines
