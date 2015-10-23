@@ -32,7 +32,8 @@ import localimports
 pd.set_option('colheader_justify','left')
 
 default_keys = ['owner', 'beamline_id', 'group', 'config', 'scan_id'] # required by dataBroker
-feature_keys = ['sample', 'experimenters'] # required by XPD, time_stub and uid will be automatically added up as well
+feature_keys = ['experimenters'] # required by XPD, time_stub and uid will be automatically added up as well
+#fixme: remove sample field just for temporily useage
 
 # These are the default directory paths on the XPD data acquisition computer.  Change if needed here
 W_DIR = '/home/xf28id1/xpdUser/tif_base'                # where the user-requested tif's go.  Local drive
@@ -491,7 +492,11 @@ def new_sample(sample, experimenters=[], comments={}, verbose = 1):
         print('current experimenters is/are '+experimenters)
         print('to change experimenters, rerun new_sample giving a list of experimenters as an argument')    
     
-    gs.RE.md['sample_load_time'] = str(datetime.datetime.today().date().time()) #fixme, get timestamp from central clock through bluesky
+    time_form = str(datetime.datetime.fromtimestamp(time.time()))
+    date = time_form[:10]
+    hour = time_form[11:16]
+    timestampstring = '_'.join([date, hour]) #fixme, get timestamp from central clock through bluesky
+    gs.RE.md['sample_load_time'] = timestampstring
     gs.RE.md['sample']['comments'] = comments
 
     if verbose: print('Sample and experimenter metadata set')
@@ -549,14 +554,12 @@ def table_gen(headers):
         dummy = ''
         dummy_key_list = [e for e in header.start.keys() if e in feature_list] # stroe list independently
 
-        time= str(datetime.datetime.fromtimestamp(header.stop.time))
-        date = time[:10]
-        hour = time[11:16]
-        timestamp = '_'.join([date, hour])
-
+        time_stub = _timestampstr(header.start.time)
+        uid = header.start.uid
+        uid_list.append(uid[:5])
         for key in dummy_key_list:
             dummy += str(header.start[key])+'_'      
-        feature_list.append(timestamp + dummy[:-1])
+        feature_list.append(time_stub + dummy[:-1])
 	    
         try:
             comment_list.append(header.start['comments'])
