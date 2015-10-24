@@ -135,13 +135,17 @@ def save_tiff(headers, sum_frames = True):
   
     # iterate over header(s)
     for header in header_list:
-        dummy = ''
-        dummy_key_list = [e for e in header.start.keys() if e in feature_keys] 
- 
-        for key in dummy_key_list:
-            dummy += str(header.start[key])+'_'      
-        feature = dummy[:-1]
-        uid_val = header.start.uid[:5]
+#        dummy = ''
+#        dummy_key_list = [e for e in header.start.keys() if e in feature_keys] 
+# 
+#        for key in dummy_key_list:
+#            dummy += str(header.start[key])+'_'      
+#        feature = dummy[:-1]
+#        uid_val = header.start.uid[:5]
+#        time_stub =_timestampstr(header.stop.time)
+        feature = _feature_gen
+        time_stub = _timestampstr(header.stop.time)
+        uid = header.start.uid[:5]
         try: 
             comment = header.start['comments']
         except KeyError:
@@ -150,47 +154,51 @@ def save_tiff(headers, sum_frames = True):
            cal = header.start['calibration']
         except KeyError:
             pass
-        time_stub =_timestampstr(header.stop.time)
+        
 
         # get images and expo time from headers
         imgs = np.array(get_images(header,'pe1_image_lightfield'))
         try:
-            cnt_time = header.start.scan_info['exposure_time']
+            cnt_time = header.start.scan_info['scan_exposure_time']
         except KeyError:
-            print('exposure time in your scan is missing, use default 0.5 secs for dark image correction.')
-            cnt_time = 0.5
+            print('scan exposure time in your header can not be found, use default 0.2 secs for dark image correction.')
+            cnt_time = 0.2
  
         # Identify the latest dark stack
-        f_d = [ f for f in os.listdir(D_DIR) ]
-        uid_list = []
-        for f in f_d:
-            uid_list.append(f[:5]) # get uids in dark base
-        uid_unique = np.unique(uid_list)
-
-        header_list = []
-        for uid in uid_list:
-            header_list.append(db[uid])
-
-        time_list = []
-        for header in header_list:
-            time_list.append(header.stop.time)
-
-        ind = np.argsort(time_list)
-        d_header = header_list[ind[-1]]
+        d_list = [ f for f in os.listdir(D_DIR) ]
+        sorted(f_d, key = os.path.getmtime)
+        d_last = dark_list[-1]
+        d_last_uid = dark_last[:5]
+        #d_last_uid = dark_last[17:22] ... future use if f_name = (time_stub)_uid_feature
+        d_header = db[str(dark_last_uid)]
+#        uid_list = []
+#        for f in f_d:
+#            uid_list.append(f[:5]) # get uids in dark base
+#        uid_unique = np.unique(uid_list)
+#
+#        header_list = []
+#        for uid in uid_list:
+#            header_list.append(db[uid])
+#
+#        time_list = []
+#        for header in header_list:
+#            time_list.append(header.stop.time)
+#
+#        ind = np.argsort(time_list)
+#        d_header = header_list[ind[-1]]
         try:
-            d_cnt = d_header.start.dark_scan_info['dark_exposure_time']
+            d_cnt_time = d_header.start.dark_scan_info['dark_exposure_time']
         except KeyError: # temporarily, as data structure is not rigirous yet
-            d_cnt = d_header.start['dark_exposure_time']
+            d_cnt_time = d_header.start['dark_exposure_time']
             
         # dark correction
-        #cnt_time = header.start.scan_info['exposure_time']
-        d_num = int(np.round(cnt_time / d_cnt))
+        d_num = int(np.round(cnt_time / d_cnt_time))
         d_img_list = np.array(get_images(d_header,'pe1_image_lightfield')) # confirmed it comes with reverse order
         correct_imgs = []
         for i in range(imgs.shape[0]):
-            correct_imgs.append(imgs[i]-np.sum(d_img_list[d_num:],0)) # use the last ones
+            correct_imgs.append(imgs[i]-np.sum(d_img_list[d_num:],0)) # use last few dark images
         if sum_frames == True:
-            f_name = '_'.join([uid_val, time_stub, feature+'.tif'])
+            f_name = '_'.join([time_stub, uid, feature+'.tif'])
             w_name = os.path.join(W_DIR,f_name)
             img = np.sum(correct_imgs,0)
             imsave(w_name, img) # overwrite mode now !!!!
@@ -202,7 +210,7 @@ def save_tiff(headers, sum_frames = True):
  
         elif sum_frames == False:
             for i in range(correct_imgs.shape[0]):
-                f_name = '_'.join([uid_val, time_stub, feature,'00'+str(i)+'.tif'])
+                f_name = '_'.join([time_stub, uid, feature,'00'+str(i)+'.tif'])
                 w_name = os.path.join(W_DIR,f_name)
                 img = correct_imgs[i]
                 imsave(w_name, img) # overwrite mode now !!!!
@@ -214,7 +222,7 @@ def save_tiff(headers, sum_frames = True):
 
 
 
-def get_dark_images(num=600, cnt_time=0.5):
+def get_dark_images(num=200, cnt_time=0.2):
     ''' Manually acquire stacks of dark images that will be used for dark subtraction later
 
     This module runs scans with the shutter closed (dark images) and saves them tagged
@@ -258,21 +266,21 @@ def get_dark_images(num=600, cnt_time=0.5):
     imgs = np.array(get_images(header,'pe1_image_lightfield'))
     #mid = round(num/2)
     for i in range(num-4, num):
-        f_name = '_'.join([uid, time_stub, 'dark','00'+str(i)+'.tif'])
+        f_name = '_'.join([time_stub, uid, 'dark','00'+str(i)+'.tif'])
         w_name = os.path.join(D_DIR,f_name)
         img = imgs[i]
         imsave(w_name, img) # overwrite mode
-        print('Images have been saved to %s' % W_DIR)
+        print('%ith images of dark scans have been saved to %s' % (i, W_DIR))
         if not os.path.isfile(w_name):
             print('Error: dark image tif file not written')
             print('Investigate and re-run')
             return
 
-def get_calibration_images(sample, wavelength, exposure_time=0.2 , num=10, **kwargs):
+def get_calibration_images(calibrant, composition =False, wavelength, calibration_scan_exposure_time=0.2 , num=10, **kwargs):
     '''Runs a calibration dataset
     
     Arguments:
-        sample - string - Chemical composition of the calibrant in form LaB6, for example
+        calibrant - string - Chemical composition of the calibrant in form LaB6, for example
         wavelength - float - wavelength in nm, which is obtained from verify_wavelength function
         exposure_time - float - count-time in seconds.  Default = 0.2 s
         num - int - number of exposures to take. Default = 10
@@ -283,11 +291,11 @@ def get_calibration_images(sample, wavelength, exposure_time=0.2 , num=10, **kwa
 
     # Prepare hold state
     try: 
-        composition_hold = copy.copy(gs.RE.md['composition'])	
-        sample_hold = copy.copy(gs.RE.md['sample'])
+        composition_hold = copy.copy(gs.RE.md['sample']['composition'])	
+        sample_name_hold = copy.copy(gs.RE.md['sample_name'])
     except KeyError:
-        composition_hold = ""
-        sample_hold = {} 
+        composition_hold = {}
+        sample_name_hold = '' 
     try:
         gs.RE.md['calibration_information']
     except KeyError:
@@ -296,10 +304,14 @@ def get_calibration_images(sample, wavelength, exposure_time=0.2 , num=10, **kwa
 
     cnt_hold = copy.copy(pe1.acquire_time)
     gs.RE.md['iscalibration'] = True
-    gs.RE.md['calibrant'] = sample
-    gs.RE.md['sample']= {} # fixme: for shorterm solubtion
-    gs.RE.md['composition'] = sample # fixme, in the future, this should be a parsed field: ['phase1':{'Na',1},'phase2':{'Cl':1}]
-    gs.RE.md['calibration_information']['calibration_scan_info'] = {'acquisition_time':exposure_time,'num_calib_exposures':num,'wavelength':wavelength}
+    gs.RE.md['calibrant'] = calibrant
+    gs.RE.md['sample_name'] = calibrant
+    if not composition:
+        gs.RE.md['sample']['composition'] = {calibrant} 
+        # fixme, in the future, this should be a parsed field: ['phase1':{'Na',1},'phase2':{'Cl':1}]
+    else:
+        gs.RE.md['sample']['composition'] = composition
+    gs.RE.md['calibration_scan_info'] = {'calibration_scan_exposure_time':calibraton_scan_exposure_time,'num_calib_exposures':num,'wavelength':wavelength}
     
     # extra fields, gives user freedom
     extra_key = kwargs.keys()
@@ -316,7 +328,7 @@ def get_calibration_images(sample, wavelength, exposure_time=0.2 , num=10, **kwa
         pe1.acquire_time = cnt_hold
         gs.RE.md['iscalibration'] = False
         del(gs.RE.md['calibrant'])
-        gs.RE.md['composition'] = composition_hold
+        gs.RE.md['sample']['composition'] = composition_hold
     except KeyError:
         # recover to previous state, set to values before calibration
         pe1.acquire_time = cnt_hold
@@ -331,25 +343,27 @@ def get_calibration_images(sample, wavelength, exposure_time=0.2 , num=10, **kwa
     # construct calibration tif file name
     header = db[-1]
     time_stub = _timestampstr(header.stop.time)
-    uid_stub = header.start.uid[:5]
-    f_name = '_'.join(['calib', uid_stub, time_stub, sample+'.tif'])
+    uid = header.start.uid[:5]
+    f_name = '_'.join(['calib', time_stub, uid, calibrant+'.tif'])
     w_name = os.path.join(W_DIR, f_name)
 
     # sum images together and save
     imgs = np.array(get_images(header,'pe1_image_lightfield'))
+    
     multiple_images = False
     if imgs.ndim ==3: multiple_images = True
+    
     if multiple_images:
         img = np.sum(imgs,0)
     else:
-        img = imgs               
+        img = imgs     
     imsave(w_name, img)
     
     # confirm the write took place
     if os.path.isfile(w_name):
         print('A summed image %s has been saved to %s' % (f_name, W_DIR))
    
-def get_light_images(scan_time=1.0, exposure_time=0.5, scan_def=False, comments={}):
+def get_light_images(scan_time=1.0, scan_exposure_time=0.5, scan_def=False, comments={}):
     '''function for getting a light image
     
     Arguments:
@@ -367,8 +381,7 @@ def get_light_images(scan_time=1.0, exposure_time=0.5, scan_def=False, comments=
             gs.RE.md['user_supplied'][key] = value
     
     # don't expose the PE for more than 5 seconds max, set it to 1 seconds if you go beyond limit
-    if exposure_time > 5.0:
-        #exposures = int(exposure_time)
+    if scan_exposure_time > 5.0:
         exposure_time = 1.0
         num = int(scan_time/exposure_time)
     else:
@@ -381,16 +394,16 @@ def get_light_images(scan_time=1.0, exposure_time=0.5, scan_def=False, comments=
     else:
         scan = scan_def
     
-    pe1.acquisition_time = exposure_time
+    pe1.acquisition_time = scan_exposure_time
 
     try:
         gs.RE.md['sample']['temp']
-        gs.RE.md['scan_info']['exposure_time']
+        gs.RE.md['scan_info']['scan_exposure_time']
     except KeyError:
         gs.RE.md['sample'] = {}
         gs.RE.md['scan_info'] = {}
-       # gs.RE.md['composition']['temp'] = cs700.value[1]  # fixme: temporaily use
-        gs.RE.md['scan_info']['exposure_time'] = exposure_time
+        gs.RE.md['sample']['temp'] = cs700.value[1]  # fixme: temporaily use
+        gs.RE.md['scan_info']['scan_exposure_time'] = scan_exposure_time
         gs.RE.md['scan_info']['number_of_exposures'] = num
         gs.RE.md['scan_info']['total_scan_duration'] = num*exposure_time
         #gs.RE.md['scan_info']['detector'] = pe1  # pe1 is not a simple object, call it directly causes I/O Error
@@ -400,7 +413,7 @@ def get_light_images(scan_time=1.0, exposure_time=0.5, scan_def=False, comments=
         scan.subs = LiveTable(['pe1_image_lightfield'])
         gs.RE(scan)
         save_tiff(db[-1])
-        print('Images have been saved to %s' % W_DIR)
+        print('Dark corrected images have been saved to %s' % W_DIR)
         # note, do not close the shutter again afterwards, we will do it manually outside of this function
 		    
         # deconstruct the metadata
