@@ -43,7 +43,7 @@ S_DIR = '/home/xf28id1/xpdUser/script_base'             # where the user scripts
 
 #fixme seach !
 
-def _filename_gen(header):
+def _feature_gen(header):
     ''' generate a human readible file name
     '''
     uid = header.start.uid
@@ -55,7 +55,7 @@ def _filename_gen(header):
     inter_list = []
     for el in dummy_list:
         if isinstance(el, list): # if one of element is 
-            dummy = ""
+            dummy = ''
             for e in el:
                 dummy += e+'_'
             inter_list.append(dummy[:-1])
@@ -79,6 +79,7 @@ def _MD_template():
     _clean_metadata()
     gs.RE.md['iscalib'] = 0
     gs.RE.md['isdark'] = 0
+    gs.RE.md['experimenters'] = []
     gs.RE.md['sample_name'] = ''
     gs.RE.md['calibrant'] = '' # transient, only for calibration set
     gs.RE.md['user_supply'] = {}
@@ -116,7 +117,7 @@ def meta_gen(fields, values):
         metadata_dict[fields[i]] = values[i]
     return metadata_dict
 
-def save_tiff(headers, sum_frames = True):
+def save_tif(headers, sum_frames = True):
     ''' save images obtained from dataBroker as tiff format files
     
     arguments:
@@ -143,7 +144,7 @@ def save_tiff(headers, sum_frames = True):
 #        feature = dummy[:-1]
 #        uid_val = header.start.uid[:5]
 #        time_stub =_timestampstr(header.stop.time)
-        feature = _feature_gen
+        feature = _feature_gen(header)
         time_stub = _timestampstr(header.stop.time)
         uid = header.start.uid[:5]
         try: 
@@ -165,27 +166,33 @@ def save_tiff(headers, sum_frames = True):
             cnt_time = 0.2
  
         # Identify the latest dark stack
-        d_list = [ f for f in os.listdir(D_DIR) ]
-        sorted(f_d, key = os.path.getmtime)
-        d_last = dark_list[-1]
-        d_last_uid = dark_last[:5]
+        '''dummy = [ f for f in os.listdir(D_DIR) ]
+        d_list = list()
+        for el in dummy:
+            d_list.append(os.path.join(D_DIR, el))
+        sorted(d_list, key = os.path.getmtime)
+        d_last = d_list[-1]
+        d_last_uid = dummy[:5]
         #d_last_uid = dark_last[17:22] ... future use if f_name = (time_stub)_uid_feature
-        d_header = db[str(dark_last_uid)]
-#        uid_list = []
-#        for f in f_d:
-#            uid_list.append(f[:5]) # get uids in dark base
-#        uid_unique = np.unique(uid_list)
-#
-#        header_list = []
-#        for uid in uid_list:
-#            header_list.append(db[uid])
-#
-#        time_list = []
-#        for header in header_list:
-#            time_list.append(header.stop.time)
-#
-#        ind = np.argsort(time_list)
-#        d_header = header_list[ind[-1]]
+        print(d_last_uid)
+        d_header = db[d_last_uid]
+        '''
+        uid_list = []
+        f_d = [ f for f in os.listdir(D_DIR) ]
+        for f in f_d:
+            uid_list.append(f[:5]) # get uids in dark base
+        uid_unique = np.unique(uid_list)
+
+        header_list = []
+        for uid in uid_list:
+            header_list.append(db[uid])
+
+        time_list = []
+        for header in header_list:
+            time_list.append(header.stop.time)
+
+        ind = np.argsort(time_list)
+        d_header = header_list[ind[-1]]
         try:
             d_cnt_time = d_header.start.dark_scan_info['dark_exposure_time']
         except KeyError: # temporarily, as data structure is not rigirous yet
@@ -197,7 +204,7 @@ def save_tiff(headers, sum_frames = True):
         correct_imgs = []
         for i in range(imgs.shape[0]):
             correct_imgs.append(imgs[i]-np.sum(d_img_list[d_num:],0)) # use last few dark images
-        if sum_frames == True:
+        if sum_frames:
             f_name = '_'.join([time_stub, uid, feature+'.tif'])
             w_name = os.path.join(W_DIR,f_name)
             img = np.sum(correct_imgs,0)
@@ -208,7 +215,7 @@ def save_tiff(headers, sum_frames = True):
                 print('Sorry, somthing went wrong with your tif saving')
                 return
  
-        elif sum_frames == False:
+        else:
             for i in range(correct_imgs.shape[0]):
                 f_name = '_'.join([time_stub, uid, feature,'00'+str(i)+'.tif'])
                 w_name = os.path.join(W_DIR,f_name)
@@ -276,7 +283,7 @@ def get_dark_images(num=200, cnt_time=0.2):
             print('Investigate and re-run')
             return
 
-def get_calibration_images(calibrant, composition =False, wavelength, calibration_scan_exposure_time=0.2 , num=10, **kwargs):
+def get_calibration_images (calibrant, wavelength, calibration_scan_exposure_time=0.2 , num=10, composition = False, **kwargs):
     '''Runs a calibration dataset
     
     Arguments:
@@ -287,7 +294,7 @@ def get_calibration_images(calibrant, composition =False, wavelength, calibratio
         **kwargs - dictionary - user specified info about the calibration. Don't use
             this to set global metadata, only use it to add information about the calibration
             It gets stored in the 'calibration_scan_info' dictionary.
-    '''
+    '''    
 
     # Prepare hold state
     try: 
@@ -307,7 +314,7 @@ def get_calibration_images(calibrant, composition =False, wavelength, calibratio
     gs.RE.md['calibrant'] = calibrant
     gs.RE.md['sample_name'] = calibrant
     if not composition:
-        gs.RE.md['sample']['composition'] = {calibrant} 
+        gs.RE.md['sample']['composition'] = composition 
         # fixme, in the future, this should be a parsed field: ['phase1':{'Na',1},'phase2':{'Cl':1}]
     else:
         gs.RE.md['sample']['composition'] = composition
@@ -547,11 +554,10 @@ def new_sample(sample, experimenters=[], comments={}, verbose = 1):
 def fuzzy_key(d, key):
     if hasattr(d,'items'):
         s = [f for f in d.keys() if f.startswith(key)]
-        print('Possible key(s) to your search is %s' % [s])
+        print('Possible key(s) to your search is %s' % s)
         print('Please identify your desired result and feed it into keychain_list() function')
         return s
         fuzzy_key(d.values(), key)
-    return [s]
 
 def find_key(d, wanted_key):
     ''' Return keychian of specific key in nested dictionary
@@ -561,12 +567,12 @@ def find_key(d, wanted_key):
     wanted_key - str - name of key you want to search for
     '''
     for k, v in d.items():
-    if isinstance(v, dict):
-        result = find_key(v, key) # dig in nested element
-        if result:
-        return [k]+p
-    elif k == wanted_key:
-        return [k]
+        if isinstance(v, dict):
+            result = find_key(v, key) # dig in nested element
+            if result:
+                return [k]+p
+        elif k == wanted_key:
+            return [k]
 
 
 def keychain_list (d, key_list):
@@ -630,7 +636,7 @@ def table_gen(headers):
     for header in header_list:
         #dummy = ''
         #dummy_key_list = [e for e in header.start.keys() if e in feature_list] # stroe list independently
-        feature = _filename_gen(header)
+        feature = _feature_gen(header)
         time_stub = _timestampstr(header.start.time)
         uid = header.start.uid
         uid_list.append(uid[:5])
@@ -742,7 +748,7 @@ def prompt_save(name,doc):
         #    dummy += str(header.start[key])+'_'
 
         #feature = dummy[:-1]
-        feature = _filename_gen(header)
+        feature = _feature_gen(header)
         
         # prepare timestamp, uid
         time_stub = _timestampstr(header.stop.time)
