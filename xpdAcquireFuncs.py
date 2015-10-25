@@ -543,22 +543,58 @@ def new_sample(sample, experimenters=[], comments={}, verbose = 1):
     if verbose: print('Sample and experimenter metadata set')
     if verbose: print('To check what will be saved with your scans, type "gs.RE.md"')
 
+#### block of search functions ####
+def fuzzy_key(d, key):
+    if hasattr(d,'items'):
+        s = [f for f in d.keys() if f.startswith(key)]
+        print('Possible key(s) to your search is %s' % [s])
+        print('Please identify your desired result and feed it into keychain_list() function')
+        return s
+        fuzzy_key(d.values(), key)
+    return [s]
+
+def find_key(d, wanted_key):
+    ''' Return keychian of specific key in nested dictionary
+    
+    argumets:
+    d - dic - nested dictionary you want to search in:
+    wanted_key - str - name of key you want to search for
+    '''
+    for k, v in d.items():
+    if isinstance(v, dict):
+        result = find_key(v, key) # dig in nested element
+        if result:
+        return [k]+p
+    elif k == wanted_key:
+        return [k]
+
+
+def keychain_list (d, key_list):
+    result = []
+    for key in key_list:
+        keychain = []
+        dummy = find_key(d, key)
+        if len(dummy) > 1:
+            dummy.remove(key)
+        else:
+            pass
+        path = ".".join(dummy)
+        result.append(path)
+        print('keychain to your desired key %s is %s' % (key, path))
+        print('')
+    return result
     
 def and_search(**kwargs):
-    '''generate mongoDB recongnizable query of "and_search" and rerutn data
+    '''generate mongoDB recongnizable query of "and_search" and rerutn headers
     
     Arguments:
-        -fields : fields you want to search on. For example, metadata stored in sample.<metadata>" or standard
-        field like "start_time". Make sure you know where is the field-value pair exactly located at.
-        
-        -values : values you are looking for. For example, "NaCl" or "300k". Make sure you know where is the field-value pair 
-        exactly located at.
-        
-        Note: Please type in fields and corresponding values of desired search with exact order
-
-    Returns:
-        list of bluesky header objects
+    - kwargs - dict - dictionary of your search. It is made up of key pairs like {'key': 'value'}
+      Please use keychain_list to have correct keychain to desired keys and then access them through slicing.
+      E.g.:
+      mykeychain = keychain_list(gs.RE.md, ['experimenters', isdark'])
+      header = and_search(**{mykeychain[0]:'Tim', mykeychain[1]:False})
     '''
+    
     dict_gen = {}
     
     for key, value in kwargs.items():
@@ -592,26 +628,27 @@ def table_gen(headers):
         header_list = headers
 
     for header in header_list:
-        dummy = ''
-        dummy_key_list = [e for e in header.start.keys() if e in feature_list] # stroe list independently
-
+        #dummy = ''
+        #dummy_key_list = [e for e in header.start.keys() if e in feature_list] # stroe list independently
+        feature = _filename_gen(header)
         time_stub = _timestampstr(header.start.time)
         uid = header.start.uid
         uid_list.append(uid[:5])
-        for key in dummy_key_list:
-            dummy += str(header.start[key])+'_'      
-        feature_list.append(time_stub + dummy[:-1])
+        #for key in dummy_key_list:
+            #dummy += str(header.start[key])+'_'
+        f_name = "_".join(time_stub, feature)      
+        feature_list.append(f_name)
 	    
         try:
             comment_list.append(header.start['comments'])
         except KeyError:
             pass
+        #try:
+            #cal_list.append(header.start['calibration'])
+        #except KeyError:
+            #pass
         try:
-            cal_list.append(header.start['calibration'])
-        except KeyError:
-            pass
-        try:
-            uid_list.append(header.start['calibration'])
+            uid_list.append(header.start['uid'])
         except KeyError:
             pass
     plt_list = [feature_list, comment_list, uid_list] # u_id for ultimate search
@@ -698,13 +735,14 @@ def sanity_check(user_in=None):
 def prompt_save(name,doc):
     if name == 'stop':
         header = db[doc['uid']] # fixme: how to do doc.uid ????
-        dummy = ''
-        dummy_key_list = [f for f in header.start.keys() if f in feature_list] # stroe it independently
+        #dummy = ''
+        #dummy_key_list = [f for f in header.start.keys() if f in feature_list] # stroe it independently
             
-        for key in dummy_key_list:
-            dummy += str(header.start[key])+'_'
+        #for key in dummy_key_list:
+        #    dummy += str(header.start[key])+'_'
 
-        feature = dummy[:-1]
+        #feature = dummy[:-1]
+        feature = _filename_gen(header)
         
         # prepare timestamp, uid
         time_stub = _timestampstr(header.stop.time)
@@ -712,7 +750,7 @@ def prompt_save(name,doc):
         imgs = get_images(header,'pe1_image_lightfield')
         
         for i in range(imgs.shape[0]):
-            f_name = '_'.join([uid, timestamp, feature,'00'+str(i)+'.tif'])
+            f_name = '_'.join([time_stub, uid, feature,'00'+str(i)+'.tif'])
             w_name = os.path.join(backup_dir,f_name)
             img = imgs[i]
             imsave(w_name, img) # overwrite mode !!!!
@@ -738,6 +776,8 @@ def _clean_metadata():
     for key in extra_key_list:
         del(gs.RE.md[key])
     gs.RE.md['sample'] = {}
+
+
 # Holding place
     #print(str(check_output(['ls', '-1t', '|', 'head', '-n', '10'], shell=True)).replace('\\n', '\n'))
     #gs.RE.md.past({'field':'value'})
