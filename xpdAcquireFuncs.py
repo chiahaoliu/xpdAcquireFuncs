@@ -44,33 +44,34 @@ S_DIR = '/home/xf28id1/xpdUser/script_base'             # where the user scripts
 #fixme seach !
 
 def _feature_gen(header):
-    ''' generate a human readible file name
+    ''' generate a human readible file name. It is made of time + uid + sample_name + user
+    filed will be skipped if it doesn't exist
     '''
     uid = header.start.uid
     time_stub = _timestampstr(header.start.time)
 
     dummy_list = []
     for key in feature_keys:
-        dummy_list.append(header.start[key])  # feature list elements is at the first level, as it should be
+        try:
+            dummy_list.append(header.start[key])  # feature list elements is at the first level, as it should be
+        except KeyError:
+            pass
     inter_list = []
     for el in dummy_list:
-        if isinstance(el, list): # if one of element is 
-            dummy = ''
-            for e in el:
-                dummy += e+'_'
-            inter_list.append(dummy[:-1])
+        if isinstance(el, list): # if element is a list
+            join_list = "_".join(el)
+            inter_list.append(join_list)
         else:
             inter_list.append(el)
-    i = 0
-    bound = len(inter_list)
-    feature = ""
-    inter_list.reverse()
-    while i< bound:
-        feature += str(inter_list.pop())
-        i += 1
-
-    f_name = "_".join([time_stub, uid[:5], feature])
-    return f_name
+    feature = "_".join(inter_list)
+ #   i = 0
+ #   bound = len(inter_list)
+ #   feature = ""
+ #   inter_list.reverse()
+ #   while i< bound:
+ #       feature += str(inter_list.pop())
+ #       i += 1
+    return feature
 
 def _MD_template():
     ''' use to generate idealized metadata structure, for pictorial memory and
@@ -126,9 +127,6 @@ def save_tif(headers, sum_frames = True):
     returns:
         nothing
     '''
-    # fixme check header_list is a list
-    # if not, make header_list into a list with one element, then proceed
-    # fixme this is much better than copy-pasting lines and lines of code.
     if type(list(headers)[1]) == str:
         header_list = [headers]
     else:
@@ -155,15 +153,13 @@ def save_tif(headers, sum_frames = True):
            cal = header.start['calibration']
         except KeyError:
             pass
-        
-
         # get images and expo time from headers
         light_imgs = np.array(get_images(header,'pe1_image_lightfield'))
         try:
             cnt_time = header.start.scan_info['scan_exposure_time']
         except KeyError:
-            print('scan exposure time in your header can not be found, use default 0.2 secs for dark image correction.')
-            cnt_time = 0.2
+            print('scan exposure time in your header can not be found, use default 0.5 secs for dark image correction.')
+            cnt_time = 0.5
  
         # Identify the latest dark stack
         '''dummy = [ f for f in os.listdir(D_DIR) ]
@@ -184,8 +180,8 @@ def save_tif(headers, sum_frames = True):
         uid_unique = np.unique(uid_list)
 
         header_list = []
-        for uid in uid_list:
-            header_list.append(db[uid])
+        for d_uid in uid_unique:
+            header_list.append(db[d_uid])
 
         time_list = []
         for header in header_list:
@@ -193,20 +189,22 @@ def save_tif(headers, sum_frames = True):
 
         ind = np.argsort(time_list)
         d_header = header_list[ind[-1]]
+        print('use uid = %s dark image scan' % d_header.start.uid)
         try:
             d_cnt_time = d_header.start.dark_scan_info['dark_exposure_time']
         except KeyError:
-            print('can not find dark_exposure_time in header of dark images; using default 0.2 seconds now.')
-            d_cnt_time = 0.2 # default value
+            print('can not find dark_exposure_time in header of dark images; using default 0.5 seconds now.')
+            d_cnt_time = 0.5 # default value
             
         # dark correction
-        print('Ploting and savinfg your dark-corrected image(s) now')
+        print('Ploting and savinfg your dark-corrected image(s) now.....')
         d_num = int(np.round(cnt_time / d_cnt_time)) # how many dark frames needed for single light image
+        print('Number of dark images applied to correction is %i.' % d_num)
         d_img_list = np.array(get_images(d_header,'pe1_image_lightfield')) # confirmed it comes with reverse order
         d_len = d_img_list.shape[0]
         correct_imgs = []
-        for i in range(imgs.shape[0]):
-            correct_imgs.append(imgs[i]-np.sum(d_img_list[d_len-d_num:d_len],0)) # use last few dark images
+        for i in range(light_imgs.shape[0]):
+            correct_imgs.append(light_imgs[i]-np.sum(d_img_list[d_len-d_num:d_len],0)) # use last few dark images
         if sum_frames:
             f_name = '_'.join([time_stub, uid, feature+'.tif'])
             w_name = os.path.join(W_DIR,f_name)
@@ -222,19 +220,20 @@ def save_tif(headers, sum_frames = True):
                 return
  
         else:
-            for i in range(correct_imgs.shape[0]):
+            for i in range(light_imgs.shape[0]):
                 f_name = '_'.join([time_stub, uid, feature,'00'+str(i)+'.tif'])
                 w_name = os.path.join(W_DIR,f_name)
                 img = correct_imgs[i]
-		fig = plt.figure(f_name)
-		plt.imshow(img)
-		plt.show()
+                fig = plt.figure(f_name)
+                plt.imshow(img)
+                plt.show()
                 imsave(w_name, img) # overwrite mode now !!!!
                 if os.path.isfile(w_name):
                     print('%s has been saved at %s' % (f_name, W_DIR))
                 else:
                     print('Sorry, something went wrong with your tif saving')
                     return
+        f_name = None
 
 
 
@@ -560,43 +559,66 @@ def new_sample(sample, experimenters=[], comments={}, verbose = 1):
     if verbose: print('To check what will be saved with your scans, type "gs.RE.md"')
 
 #### block of search functions ####
-def fuzzy_key(d, key):
+def get_fuzzy_key(key, d=gs.RE.md):
+    ''' Help user to do fuzzy search on key names contains in a nested
+    dictionary. Return all possible key names starting with a fuzzy key name
+    
+    Arguments:
+    key - str - possible key name, can be partial like 'exp', 'sca' or nearly complete like 'experiment'
+    d - dict - dictionary you want searched for. Default is set to current metadata dictionary
+    '''
     if hasattr(d,'items'):
-        s = [f for f in d.keys() if f.startswith(key)]
-        print('Possible key(s) to your search is %s' % s)
-        print('Please identify your desired result and feed it into keychain_list() function')
-        return s
-        fuzzy_key(d.values(), key)
+        rv = [f for f in d.keys() if f.startswith(key)]
+        print('Possible key(s) to your search is %s' % rv)
+        print('Please identify your desired result and use build_keychain_list() function to generate complete keychian map to nested metadata dictionary')
+        return rv
+        fuzzy_key(key, d.values())
 
-def find_key(d, wanted_key):
-    ''' Return keychian of specific key in nested dictionary
+def get_keychain(wanted_key, d = gs.RE.md):
+    ''' Return keychian(s) of specific key(s) in a nested dictionary
     
     argumets:
-    d - dic - nested dictionary you want to search in:
     wanted_key - str - name of key you want to search for
+    d - dict - dictionary you want searched for. Default is set to current metadata dictionary
     '''
     for k, v in d.items():
         if isinstance(v, dict):
-            result = find_key(v, key) # dig in nested element
+            result = get_keychain(wanted_key, v) # dig in nested element
             if result:
                 return [k]+p
         elif k == wanted_key:
             return [k]
 
 
-def keychain_list (d, key_list):
+def build_keychain_list(key_list, d = gs.RE.md):
+    ''' Return a list that yields correct path(s) to nested dictionary. String elements are ready to be used in and_search() function.
+    
+    argumets:
+    key_list - str or list - name of key(s) you want to search for
+    d - dict - dictionary you want searched for. Default is set to current metadata dictionary
+
+    '''
     result = []
-    for key in key_list:
-        keychain = []
-        dummy = find_key(d, key)
-        if len(dummy) > 1:
-            dummy.remove(key)
+    if isinstance(key_list, str):
+        key_list_operate = []
+        key_list_operate.append(key_list)
+    elif isinstance(key_list, list):
+        key_list_operate = key_list
+        
+    for key in key_list_operate:
+        dummy = get_keychain(key)
+        if dummy:
+            if len(dummy) > 1:
+                dummy.remove(key)
+                path = '.'.join(dummy)
+                result.append(path)
+            elif len(dummy) == 1:
+                path = dummy[0]
+                result.append(path)
         else:
-            pass
-        path = ".".join(dummy)
-        result.append(path)
+            path = key
+            result.append(path)
         print('keychain to your desired key %s is %s' % (key, path))
-        print('')
     return result
     
 def and_search(**kwargs):
@@ -651,13 +673,13 @@ def table_gen(headers):
         uid_list.append(uid[:5])
         #for key in dummy_key_list:
             #dummy += str(header.start[key])+'_'
-        f_name = "_".join(time_stub, feature)      
+        f_name = "_".join(time_stub, feature)
         feature_list.append(f_name)
 	    
         try:
             comment_list.append(header.start['comments'])
         except KeyError:
-            pass
+            commet_list.append('None')
         #try:
             #cal_list.append(header.start['calibration'])
         #except KeyError:
@@ -747,6 +769,8 @@ def sanity_check(user_in=None):
     else:
         return
 
+''' Don't use it, it is slow and potentially dangerous to local work stations
+when saving a lot of tif files.
 def prompt_save(name,doc):
     if name == 'stop':
         header = db[doc['uid']] # fixme: how to do doc.uid ????
@@ -774,7 +798,7 @@ def prompt_save(name,doc):
             else:
                 print('Sorry, something went wrong with your tif saving')
                 return
-
+'''
 def _timestampstr(timestamp):
     time= str(datetime.datetime.fromtimestamp(timestamp))
     date = time[:10]
