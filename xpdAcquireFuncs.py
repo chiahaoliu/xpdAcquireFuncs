@@ -158,7 +158,7 @@ def save_tif(headers, sum_frames = True):
         
 
         # get images and expo time from headers
-        imgs = np.array(get_images(header,'pe1_image_lightfield'))
+        light_imgs = np.array(get_images(header,'pe1_image_lightfield'))
         try:
             cnt_time = header.start.scan_info['scan_exposure_time']
         except KeyError:
@@ -195,19 +195,25 @@ def save_tif(headers, sum_frames = True):
         d_header = header_list[ind[-1]]
         try:
             d_cnt_time = d_header.start.dark_scan_info['dark_exposure_time']
-        except KeyError: # temporarily, as data structure is not rigirous yet
-            d_cnt_time = d_header.start['dark_exposure_time']
+        except KeyError:
+            print('can not find dark_exposure_time in header of dark images; using default 0.2 seconds now.')
+            d_cnt_time = 0.2 # default value
             
         # dark correction
-        d_num = int(np.round(cnt_time / d_cnt_time))
+        print('Ploting and savinfg your dark-corrected image(s) now')
+        d_num = int(np.round(cnt_time / d_cnt_time)) # how many dark frames needed for single light image
         d_img_list = np.array(get_images(d_header,'pe1_image_lightfield')) # confirmed it comes with reverse order
+        d_len = d_img_list.shape[0]
         correct_imgs = []
         for i in range(imgs.shape[0]):
-            correct_imgs.append(imgs[i]-np.sum(d_img_list[d_num:],0)) # use last few dark images
+            correct_imgs.append(imgs[i]-np.sum(d_img_list[d_len-d_num:d_len],0)) # use last few dark images
         if sum_frames:
             f_name = '_'.join([time_stub, uid, feature+'.tif'])
             w_name = os.path.join(W_DIR,f_name)
             img = np.sum(correct_imgs,0)
+            fig = plt.figure(f_name)
+            plt.imshow(img)
+            plt.show()
             imsave(w_name, img) # overwrite mode now !!!!
             if os.path.isfile(w_name):
                 print('%s has been saved at %s' % (f_name, W_DIR))
@@ -220,6 +226,9 @@ def save_tif(headers, sum_frames = True):
                 f_name = '_'.join([time_stub, uid, feature,'00'+str(i)+'.tif'])
                 w_name = os.path.join(W_DIR,f_name)
                 img = correct_imgs[i]
+		fig = plt.figure(f_name)
+		plt.imshow(img)
+		plt.show()
                 imsave(w_name, img) # overwrite mode now !!!!
                 if os.path.isfile(w_name):
                     print('%s has been saved at %s' % (f_name, W_DIR))
