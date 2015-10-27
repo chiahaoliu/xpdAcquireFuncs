@@ -50,9 +50,15 @@ def _feature_gen(header):
     dummy_list = []
     for key in feature_keys:
         try:
-            dummy_list.append(header.start[key])  # feature list elements is at the first level, as it should be
+            # truncate length
+            if len(header.start[key])>12:
+                value = header.start[key][:12]
+            # clear space
+            dummy = [ ch for ch in list(value) if ch!=' ']
+            dummy_list.append(''.join(dummy))  # feature list elements is at the first level, as it should be
         except KeyError:
             pass
+        
     inter_list = []
     for el in dummy_list:
         if isinstance(el, list): # if element is a list
@@ -109,12 +115,12 @@ def meta_gen(fields, values):
     return metadata_dict
 
 def _dig_dict(d):
-    '''completely unpack a nested dictionary, need to use with an extra empty dictionary emp_dict = {}'''
+    '''completely unpack a nested dictionary'''
+    emp_dict = {}
+    # temporarily solution, need to fixed later on
     for k,v in d.items():
-        if hasattr(v,'items'):
-            _dig_dict(v)
-        else:
-            emp_dict[k] = v
+        emp_dict[k] = v
+    return emp_dict
 
 def write_config(d, config_f_name):
     '''reproduce information stored in config file and save it as a config file
@@ -123,30 +129,40 @@ def write_config(d, config_f_name):
     d - dict - a dictionary that stores config data
     f_name - str - name of your config_file, usually is 'config+tif_file_name.cfg'
 '''
+    # temporarily solution, need a more robust one later on
     import configparser
     config = configparser.ConfigParser()
-    for k,v in d.items():
-        config[k] = {} # create headers to config file
-        emp_dict = {}
-        _dig_dict(v)  # dig_dict with fill emp_dict with key-value pairs in d
-        for kk, vv in emp_dict:
-            config[k][kk] = vv # futer down, write key-value pairs
+    for k,v in _dig_dict(d).items():
+        #config[k] = {} # TEST-> hashout create headers to config file
+        #_dig_dict(v)  # dig_dict with fill emp_dict with key-value pairs in d
+        config[k] = v # temporarily use
     with open(config_f_name+'.cfg', 'w') as configfile:
         config.write(configfile)
 
-def save_tif(headers, file_name = False, sum_frames = True):
+def _filename_gen(header):
+    '''generate a file name of tif file. It contains time_stub, uid and feature
+    of your header'''
+
+    uid = header.start.uid[:5]
+    time_stub = _timestampstr(header.stop.time)
+    feature = _feature_gen(header)
+    file_name = '_'.join([time_stub, uid, feature])
+    return file_name
+
+def save_tif(headers, tif_name = False, sum_frames = True, dark_uid=False):
     ''' save images obtained from dataBroker as tiff format files
 
     arguments:
         headers - list - a list of header objects obtained from a query to dataBroker
-        f_name - str - optional. File name of tif file being saved.
-            default setting yields a file name made of time, uid, feature of your header
+        file_name - str - optional. File name of tif file being saved.
+            default setting yields a file name including time, uid, feature of your header
         sum_frames - bool - optional. when it is set to True, image frames contained in header will be summed into one file
     returns:
         nothing
     '''
     if type(list(headers)[1]) == str:
-        header_list = [headers]
+        header_list = list()
+        header_list.append(headers)
     else:
         header_list = headers
 
@@ -160,9 +176,6 @@ def save_tif(headers, file_name = False, sum_frames = True):
 #        feature = dummy[:-1]
 #        uid_val = header.start.uid[:5]
 #        time_stub =_timestampstr(header.stop.time)
-        feature = _feature_gen(header)
-        time_stub = _timestampstr(header.stop.time)
-        uid = header.start.uid[:5]
         try:
             comment = header.start['comments']
         except KeyError:
@@ -188,7 +201,7 @@ def save_tif(headers, file_name = False, sum_frames = True):
         sorted(d_list, key = os.path.getmtime)
         d_last = d_list[-1]
         d_last_uid = dummy[:5]
-        #d_last_uid = dark_last[17:22] ... future use if f_name = (time_stub)_uid_feature
+        #d_last_uid = dark_last[17:22] ... for future use if f_name = (time_stub)_uid_feature
         print(d_last_uid)
         d_header = db[d_last_uid]
         '''
@@ -198,38 +211,50 @@ def save_tif(headers, file_name = False, sum_frames = True):
             uid_list.append(f[:5]) # get uids in dark base
         uid_unique = np.unique(uid_list)
 
-        header_list = []
+        dark_header_list = []
         for d_uid in uid_unique:
-            header_list.append(db[d_uid])
+            dark_header_list.append(db[d_uid])
 
-        time_list = []
-        for header in header_list:
-            time_list.append(header.stop.time)
+        dark_time_list = []
+        for dark_header in dark_header_list:
+            dark_time_list.append(header.stop.time)
 
-        ind = np.argsort(time_list)
-        d_header = header_list[ind[-1]]
-        print('use uid = %s dark image scan' % d_header.start.uid)
+        ind = np.argsort(dark_time_list)
+        if not dark_uid:
+            dark_header = dark_header_list[ind[-1]]
+        else:
+            dark_header = db[str(dark_uid)]
+        print('use uid = %s dark image scan' % dark_header.start.uid)
         try:
-            d_cnt_time = d_header.start.dark_scan_info['dark_exposure_time']
+            dark_cnt_time = dark_header.start.dark_scan_info['dark_exposure_time']
         except KeyError:
             print('can not find dark_exposure_time in header of dark images; using default 0.5 seconds now...')
-            print('Dont0 worry, a slightly off correction will not significantly degrade quality of your data') # fixme: comfort user??
-            d_cnt_time = 0.5 # default value
+            print('Dont worry, a slightly off correction will not significantly degrade quality of your data') # fixme: comfort user??
+            dark_cnt_time = 0.5 # default value
 
         # dark correction
         print('Plotting and saving your dark-corrected image(s) now....')
-        d_num = int(np.round(cnt_time / d_cnt_time)) # how many dark frames needed for single light image
-        print('Number of dark images applied to correction your image(s): %i....' % d_num)
-        d_img_list = np.array(get_images(d_header,'pe1_image_lightfield')) # confirmed that it comes with reverse order
-        d_len = d_img_list.shape[0]
+        dark_num = int(np.round(cnt_time / dark_cnt_time)) # how many dark frames needed for single light image
+        print('Number of dark images applied to correction your image(s): %i....' % dark_num)
+        dark_img_list = np.array(get_images(dark_header,'pe1_image_lightfield')) # confirmed that it comes with reverse order
+        dark_len = dark_img_list.shape[0]
         correct_imgs = []
+        print((dark_len-dark_num, dark_len))
         for i in range(light_imgs.shape[0]):
-            correct_imgs.append(light_imgs[i]-np.sum(d_img_list[d_len-d_num:d_len],0)) # use last d_num dark images
+            correct_imgs.append(light_imgs[i]-np.sum(dark_img_list[dark_len-dark_num:dark_len],0)) # use last d_num dark images
+
+
+       # header_filename =_filename_gen(header)    
         if sum_frames:
-            if not file_name:
-                f_name = '_'.join([time_stub, uid, feature+'.tif'])
+            if not tif_name:
+                header_uid = header.start.uid[:5]
+                time_stub = _timestampstr(header.stop.time)
+                feature = _feature_gen(header)
+                f_name ='_'.join([time_stub, header_uid, feature+ '.tif'])
             else:
-                f_name = file_name
+                f_name = tif_name
+
+            #print(f_name)
             w_name = os.path.join(W_DIR,f_name)
             img = np.sum(correct_imgs,0)
             fig = plt.figure(f_name)
@@ -244,10 +269,16 @@ def save_tif(headers, file_name = False, sum_frames = True):
 
         else:
             for i in range(light_imgs.shape[0]):
-                if not file_name:
-                    f_name = '_'.join([time_stub, uid, feature,'00'+str(i)+'.tif'])
+                if not tif_name:
+                    header_uid = header.start.uid[:5]
+                    time_stub = _timestampstr(header.stop.time)
+                    feature = _feature_gen(header)
+                    f_name ='_'.join([time_stub, header_uid, feature, '00'+str(i)+'.tif'])
+                    #f_name = '_'.join([_filename_gen(header),'00'+str(i)+'.tif'])
+                    #f_name = '_'.join(header_filename, '00'+str(i)+'.tif')
                 else:
-                    f_name = file_name + '00' + str(i) +'.tif'
+                    f_name = tif_name + '_00' + str(i) +'.tif'
+                #print(f_name)
                 w_name = os.path.join(W_DIR,f_name)
                 img = correct_imgs[i]
                 fig = plt.figure(f_name)
@@ -262,21 +293,32 @@ def save_tif(headers, file_name = False, sum_frames = True):
 
         # write config data
         f_name = None # clear value and re-assign it as we don't need to save multiple files
-        f_name = '_'.join([time_stub, uid, feature+'.cfg'])
-        config_f_name = '_'.join('config', config_f_name)
+        #f_name = '_'.join([time_stub, uid, feature+'.cfg'])
+        f_name = _filename_gen(header) + '.cfg'
+        config_f_name = '_'.join(['config', f_name])
         w_config_name = os.path.join(W_DIR, config_f_name)
         try:
-            config_dict = header.start.calibration_scan_info.calibration_information['config_data']
-        except KeyError:
-            print('Can not find your calibration config data. Did you put it to other fields?')
+            #config_dict=header.start.calibration_scan_info.calibration_information['config_data']  the right one, disable it for test
+            config_dict = header.start.calibration_information['config_data']
+        except AttributeError:
+            print('Can not find your calibration config data in current metadata dictionary. Did you put it to other fields?')
             print('if still wish to save your config data, use write_config() function')
             return
+        if isinstance(config_dict, dict):
+            pass
+        else:
+            print('your config data is not a dictionary. Writting stop')
+            return
+
+        w_name =None
+        '''
         write_config(config_dict, w_config_name)
         if os.path.isfile(w_config_name):
             print('%s has been saved at %s' % (config_f_name, W_DIR))
         else:
             print('Sorry, something went wrong when saving your config data. Please use write_config() function to try again')
             # very unlikely to happen but still leave it here
+        '''
 
 
 def get_dark_images(num=300, dark_scan_eposure_time=0.2):
@@ -307,12 +349,12 @@ def get_dark_images(num=300, dark_scan_eposure_time=0.2):
         gs.RE(ctscan)
 
         gs.RE.md['isdark'] = False
-        delete dark_scan_info
+        del(gs.RE.md['dark_scan_info'])
         pe1.acquire_time = dark_cnt_hold
         # fixme code to to set filter/shutter back to initial state
     except:
         gs.RE.md['isdark'] = False
-        delete dark_scan_info field
+        del(gs.RE.md['dark_scan_info field'])
         pe1.acquire_time = dark_cnt_hold
         # fixme code to to set filter/shutter back to initial state
 
@@ -407,11 +449,10 @@ def get_calibration_images (calibrant, wavelength, calibration_scan_exposure_tim
 
     # construct calibration tif file name
     header = db[-1]
-    time_stub = _timestampstr(header.stop.time)
-    uid = header.start.uid[:5]
-    f_name = '_'.join(['calib', time_stub, uid, calibrant+'.tif'])
+    f_name = '_'.join(['calib', _filename_gen(header) +'.tif'])
     w_name = os.path.join(W_DIR, f_name)
-
+    save_tif(header, w_name, sum_frames=True)
+'''
     # sum images together and save
     #fixme: for now dark correction is hard coded here but in the future, will be integrated into save_tif
 
@@ -419,17 +460,6 @@ def get_calibration_images (calibrant, wavelength, calibration_scan_exposure_tim
     calib_cnt_time = header.start.calibration_scan_info['calibration_scan_exposure_time']
 
     # Identify the latest dark stack
-    '''dummy = [ f for f in os.listdir(D_DIR) ]
-    d_list = list()
-    for el in dummy:
-        d_list.append(os.path.join(D_DIR, el))
-    sorted(d_list, key = os.path.getmtime)
-    d_last = d_list[-1]
-    d_last_uid = dummy[:5]
-    #d_last_uid = dark_last[17:22] ... future use if f_name = (time_stub)_uid_feature
-    print(d_last_uid)
-    d_header = db[d_last_uid]
-    '''
     uid_list = []
     f_d = [ f for f in os.listdir(D_DIR) ]
     for f in f_d:
@@ -484,7 +514,7 @@ def get_calibration_images (calibrant, wavelength, calibration_scan_exposure_tim
     # confirm that file has been written
     if os.path.isfile(w_name):
         print('A summed image %s has been saved to %s' % (f_name, W_DIR))
-
+    '''
 def get_light_images(scan_time=1.0, scan_exposure_time=0.5, scan_def=False, comments={}):
     '''function for getting a light image
 
@@ -555,8 +585,8 @@ def get_light_images(scan_time=1.0, scan_exposure_time=0.5, scan_def=False, comm
         print('image collection failed. Check why gs.RE(scan) is not working and rerun')
         return
 
-def get_tscan(scan_exposure_time=0.5, start_temperature, final_temperature, tscan_steps, comments={}):
-    function for doing a temperature series scan
+def get_tscan(start_temperature, final_temperature, tscan_steps, scan_exposure_time=0.5, comments={}):
+    '''function for doing a temperature series scan
 
     Arguments:
         scan_exposure_time - float - optional. exposure time per frame, default value is 0.5 s
@@ -564,6 +594,7 @@ def get_tscan(scan_exposure_time=0.5, start_temperature, final_temperature, tsca
         final_temperature - float - ending point of your temperature scan
         tscan_steps - int - steps of your temeprature series
         comments - dictionary - optional. dictionary of user defined key:value pairs.
+    '''
     if comments:
         extra_key = comments.keys()
         for key, value in comments.items():
@@ -598,14 +629,14 @@ def get_tscan(scan_exposure_time=0.5, start_temperature, final_temperature, tsca
 
         gs.RE(tscan)
         header = db[-1]
-        feature = _feature_gen(header)
-        time_stub = _timestampstr(header.stop.time)
-        uid = header.start.uid[:5]
+        #feature = _feature_gen(header)
+        filename = _filename_gen(header)
         #temp = header.start.temperaute ????????? fixme: figure out where is this data stored in header, must be a list
         '''pseudo code
         for t in temp:
-            f_name = '_'.join('temp', time_stub, uid, feature, t+'.tif')
-            save_tiff(db[-1], file_name =f_name, sum_frames = False)
+            f_name = '_'.join('temp', filename, t+'K.tif')
+            w_name = os.path.join(w_dir, f_name)
+            save_tiff(header, file_name =f_name, sum_frames = False)
 
         #print('Dark corrected images have been saved to %s' % W_DIR)
         # note, do not close the shutter again afterwards, we will do it manually outside of this function
@@ -721,7 +752,7 @@ def new_sample(sample_name, composition = '', experimenters=[], comments={}, ver
 
     if not experimenters:
         experimenters = gs.RE.md['experimenters']
-        print('urrent experimenters is/are %s', % experimenters)
+        print('urrent experimenters is/are %s' % experimenters)
         print('To change experimenters, rerun new_user with desired experimenter list as the argument')
 
     if not composition:
@@ -740,20 +771,20 @@ def new_sample(sample_name, composition = '', experimenters=[], comments={}, ver
     if verbose: print('To check what will be saved with your scans, type "gs.RE.md"')
 
 #### block of search functions ####
-def get_keys(fuzzy_key, d=gs.RE.md):
+def get_keys(fuzzy_key, d=gs.RE.md, verbose=0):
     ''' fuzzy search on key names contains in a nested dictionary.
     Return all possible key names starting with fuzzy_key
-
+:
     Arguments:
     fuzzy_key - str - possible key name, can be fuzzy like 'exp', 'sca' or nearly complete like 'experiment'
     d - dict - dictionary you want searched for. Default is set to current metadata dictionary
     '''
     if hasattr(d,'items'):
-        rv = [f for f in d.keys() if f.startswith(key)]
-        print('Possible key(s) to your search is %s' % rv)
-        print('Please identify your desired result and use build_keychain_list() function to generate complete keychian map to nested metadata dictionary')
+        rv = [f for f in d.keys() if f.startswith(fuzzy_key)]
+        if not verbose: print('Possible key(s) to your search is %s' % rv)
+        #print('Please identify your desired result and use build_keychain_list() function to generate complete keychian map to nested metadata dictionary')
         return rv
-        fuzzy_key(key, d.values())
+        get_keys(fuzzy_key, d.values())
 
 def get_keychain(wanted_key, d = gs.RE.md):
     ''' Return keychian(s) of specific key(s) in a nested dictionary
@@ -771,7 +802,7 @@ def get_keychain(wanted_key, d = gs.RE.md):
             return [k]
 
 
-def build_keychain_list(key_list, d = gs.RE.md):
+def build_keychain_list(key_list, d = gs.RE.md, verbose = 1):
     ''' Return a keychain list that yields all parent keys for every key in key_list
         E.g. d = {'layer1':{'layer2':{'mykey':'value'}}}
             build_keychain_list([layer2, mykey],d) = ['layer1', 'layer1.layer2']
@@ -791,16 +822,18 @@ def build_keychain_list(key_list, d = gs.RE.md):
         dummy = get_keychain(key)
         if dummy:
             if len(dummy) > 1:
-                dummy.remove(key)
                 path = '.'.join(dummy)
                 result.append(path)
-            elif len(dummy) == 1:
+            elif len(dummy) == 1: # key at first level
                 path = dummy[0]
                 result.append(path)
-        else:
+        else:  # find an empty dictionary
             path = key
             result.append(path)
-        print('keychain to your desired key %s is %s' % (key, path))
+        if verbose:
+            print('keychain to your desired key %s is "%s"' % (key, path))
+        else:
+            pass
     return result
 
 def search(desired_value, *args, **kwargs):
@@ -834,24 +867,24 @@ def search(desired_value, *args, **kwargs):
     '''
     if desired_value and args:
         possible_keys = get_keys(args)
-        keychain_list = build_keychain_list(possible_keys)
+        keychain_list = build_keychain_list(possible_keys, verbose =0)
         search_header_list = []
         for i in range(len(keychain_list)):
             dummy_search_dict = {}
             dummy_search_dict[keychain_list[i]] = desired_value
-            dummy_search_dict['group'] = 'xpd' # create an anchor as mongoDB and_search need at least 2 key-value pairs
-            search_header = db[**dummy_search_dict]
+            dummy_search_dict['group'] = 'XPD' # create an anchor as mongoDB and_search needs at least 2 key-value pairs
+            search_header = db(**dummy_search_dict)
             search_header_list.append(search_header)
-            print('||Your %i-th search %s = %s yields %i headers||' % (i, keychain_list[i], desired_value, len(search_header)))
-            print('Identify desired criteria and have access to it through indexing over your search result')
-            return search_header_list # might be less useful for users as only one condition is given
+            print('Your %ith search  "%s = %s"  yields  %i  headers' % (i, keychain_list[i], desired_value, len(search_header)))
+        print('Identify desired search(es) and obtain header(s) by indexing over your search result')
+        return search_header_list # might be less useful for users as only one condition is given
 
     elif not desired_value and kwargs:
         if len(kwargs)>1:
-            search_header = db[**kwargs]
+            search_header = db(**kwargs)
         elif len(kwargs) ==1:
-            kwargs['group']='xpd'
-            search_header = db[**kwargs]
+            kwargs['group']='XPD'
+            search_header = db(**kwargs)
         else:
             print('You are giving in an empty searching criteria. Please try again')
             return
@@ -987,7 +1020,7 @@ def print_dict(d, ident = '', braces=1):
         d - dict - nested dictionary you want to print
     '''
 
-    for key, value in dictionary.items():
+    for key, value in d.items():
         if isinstance(value, dict):
             print ('%s%s%s%s' %(ident,braces*'[', key , braces*']'))
             print_dict(value, ident+'  ', braces+1)
