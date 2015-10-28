@@ -22,7 +22,7 @@ def start_beamtime():
     w_len = len(os.listdir(W_DIR))
     d_len = len(os.listdir(D_DIR))
     r_len = len(os.listdir(R_DIR))
-    s_len = len(os.listdir(S_DIR))
+    s_len = len(os.listdir(S_DIR)) # script base
     if not (w_len!=0 and d_len!=0 and r_len!=0 and s_len!=0):
         print('the working directories are not empty.')
         print('if this is really a new beamtime, then please run end_beamtime.py to archive')
