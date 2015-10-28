@@ -14,10 +14,22 @@ def end_beamtime(userID):
     R_DIR = '/home/xf28id1/xpdUser/config_base'             # where the xPDFsuite generated config files go.  Local drive
     D_DIR = '/home/xf28id1/xpdUser/dark_base'               # where the tifs from dark-field collections go. Local drive
     B_DIR = '/home/xf28id1/pe1_data'                        # default networked drive where all tifs are automatically written but also user-generated data will be stored
+    while True:
+        userID = input('Please enter the beamline ID (name) of the user-group(with no spaces):')
+        print('Checking if your input contains invalid file name in unix system...')
+        # check if name is a valid name
+        clean_name = [ ch for ch in userID if ch.isalnum()]
+        clean_path = ''.join(clean_name)
+        backup_trunk = os.path.join(B_DIR,clean_path)
+        print('Current data in tif_base, dark_base and config_base will be moved to %s' % backup_trunk)
+        userJustify = input('Please confirm again that is a correct path (yes/no)')
+        if userJustify == 'yes':
+            break
+        else:
+            print('Alright, lets do it agin')
+            pass
 
-    input('Please enter the unique ID (name) of the user-group (with no spaces):',userID)
-    backup_trunk = os.path.join(B_DIR,userID)
-    # fixme code to check if ALL of tif_base, etc. are empty
+    # code to check if ALL of tif_base, etc. are empty
     w_len = len(os.listdir(W_DIR))
     d_len = len(os.listdir(D_DIR))
     r_len = len(os.listdir(R_DIR))
@@ -25,7 +37,7 @@ def end_beamtime(userID):
     if (w_len!=0 and d_len!=0 and r_len!=0 and s_len!=0):
         print('All the working directories appear to be empty.  Either end_beamtime.py has already been run')
         print('or the path to the expected working directories are incorrectly set.')
-        print('The paths being used are:')
+        print('The paths being checked are:')
         print(W_DIR)
         print(R_DIR)
         print(D_DIR)
@@ -44,14 +56,16 @@ def end_beamtime(userID):
         print('before proceeding, check that you entered the correct userID')
         print('do you want to create a new backup directory for a new beamtime with this user?')
         print('to add files to the existing backup directory hit return.')
-        input('Otherwise, enter a new directory name, e.g., "secondbeamtime":',respo)
-        if str(respo) != '':
-            bdir = os.path.join.(bdir,str(respo))
-        elif str(respo) == '':
-            print('please enter a new directory name and try again')
-            return
+        respo = input('Otherwise, enter a new directory name, e.g., "secondbeamtime":')
+    if str(respo) != '':
+        bdir = os.path.join.(bdir,str(respo))
+        pass
+    elif str(respo) == '':
+        print('please enter a new directory name and try again')
+        return
 
     # fixme mv tif_base, dark_base and config_base in the backup place then empty them on the local drive
+    print('Now we are about to move files....')
     todir_w = os.path.join(bdir,W_DIR)
     todir_d = os.path.join(bdir,D_DIR)
     todir_r = os.path.join(bdir,r_DIR)

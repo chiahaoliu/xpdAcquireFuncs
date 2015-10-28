@@ -96,10 +96,22 @@ def _MD_template():
     return gs.RE.md
 
 def scan_info():
-    all_sacn_info = [gs.RE.md.scan_info['exposure_time'],
-            gs.RE.md.calibrationscan_info['calibration_exposure_time'],
-            gs.RE.md.dark_scan_info['dark_exposure_time']]
-    return print('scan exposure time is %s, calibration exposure time is %s, dark scan exposure time is %s' % (all_scan_info[0], all_scan_info[1], all_scan_info[2]))
+    ''' hard coded scan information. Aiming for our standardized metadata
+    dictionary'''
+    all_scan_info = []
+    try:
+        all_scan_info.append(gs.RE.md['scan_info']['exposure_time'])
+    except KeyError:
+        all_scan_info.append('')
+    try:
+        all_scan_info.append(gs.RE.md['calibration_scan_info']['calibration_exposure_time'])
+    except KeyError:
+        all_scan_info.append('')
+    try:
+        all_scan_info.append(gs.RE.md['dark_scan_info']['dark_exposure_time'])
+    except KeyError:
+        all_scan_info.append('')
+    print('scan exposure time is %s, calibration exposure time is %s, dark scan exposure time is %s' % (all_scan_info[0], all_scan_info[1], all_scan_info[2]))
 
 def meta_gen(fields, values):
     '''generate metadata dictionary used in your run engines
@@ -687,18 +699,21 @@ def load_calibration(config_file = False, config_dir = False):
             f_dummy.append(os.path.join(read_dir,f))
         f_sort = sorted(f_dummy, key = os.path.getmtime)
         f_recent = f_sort[-1]
-        f_recent_time = _timestampstr(os.path.getmtime(f_recent))
-        config_file_stub = str(f_recent) # stringify it to avoid error
+        f_time = _timestampstr(os.path.getmtime(f_recent))  # time of config file
+        config_file_stub = str(f_recent)
         f_name = os.path.join(read_dir, config_file_stub)
         if len(f_sort) >0:
-            print('Using '+ f_name +', the most recent config file that was found in ' + read_dir )
+            print('Using %s, the most recent config file that was found in %s' % (config_file_stub, read_dir))
         else:
             print('There is no ".cfg" file in '+ read_dir)
             print('make sure the config file has been written in that directory and has extension ".cfg"')
+            return
     else:
         f_name = os.path.join(read_dir,config_file)
         if os.path.isfile(f_name):
-            print('Using user-supplied config file: '+config_file+' located in'+read_dir)
+            config_file_stub = config_file # name of config file
+            f_time = _timestampstr(os.path.getmtime(f_name)) # time of config file
+            print('Using user-supplied config file: %s located at %s' % (config_file, read_dir))
         else:
             print('Your config file '+config_file+' is not found. Please check again your directory and file name')
             return
@@ -714,15 +729,15 @@ def load_calibration(config_file = False, config_dir = False):
         options = config.options(section)
         for option in options:
             try:
-                config_dict[option] = config.get(section, option)
+                config_dict[section][option] = config.get(section, option)
                 #if config_dict[option] == -1:
                 #    DebugPrint("skip: %s" % option)
             except:
                 print("exception on %s!" % option)
                 config_dict[option] = None
-    gs.RE.md['calibration_scan_info']['calibration_information'] = {'from_calibration_file':str(config_file_stub),'calib_file_creation_date':f_recent_time, 'config_data':config_dict}
+    gs.RE.md['calibration_scan_info']['calibration_information'] = {'from_calibration_file':str(config_file_stub),'calib_file_creation_date':f_time, 'config_data':config_dict}
 
-    print('Calibration metadata will be saved in dictionary "calibration_information" with subsequent scans. type gs.RE.md to check.')
+    print('Calibration metadata will be saved in dictionary "calibration_information" with subsequent scans.\nType gs.RE.md to check.')
     print('Run load_calibration() again to update/switch your config file')
 
 def new_user(user_list):
@@ -745,7 +760,7 @@ def new_sample(sample_name, composition = '', experimenters=[], comments={}, ver
 
     sample_name - str - current sample name, for example, dppa2 or Ni
     composition - list - optional. chemical composition of your sample, it is described by phases and elements.
-        For example, ['phase1':{'Na',1},'phase2':{'Cl':1}] for NaCl
+        For example, [{'phase1':{'Na',1}},{'phase2':{'Cl':1}}] for NaCl
     experimenters - list - optional. list of current experimenter(s). reuse current value if not given
     comments - dict - optional. user supplied comments that relate to the current sample. Default = ''
     verbose - bool - optional. set to false to suppress printed output.
@@ -753,23 +768,44 @@ def new_sample(sample_name, composition = '', experimenters=[], comments={}, ver
     if verbose: print('Setting up global run engines(gs.RE) with your metadata.......')
 
     if not experimenters:
-        experimenters = gs.RE.md['experimenters']
-        print('urrent experimenters is/are %s' % experimenters)
-        print('To change experimenters, rerun new_user with desired experimenter list as the argument')
+        try:
+            experimenters = gs.RE.md['experimenters']
+        except KeyError:
+            experimenters = ''
+        print('Current experimenters is/are %s' % experimenters)
+        #print('To change experimenters, rerun new_user() with desired experimenter list as the argument')
+    else:
+        new_exp = experimenters
+        gs.RE.md['experimenters'] = new_exp
+        print('Experimenters field has been updated as %s' % experimenters)
+        #print('To update experimenters solely, rerun new_user() with desired experimenter list as the argument')
 
     if not composition:
-        composition = gs.RE.md['sample']['composition']
+        try:
+            composition = gs.RE.md['sample']['composition']
+        except KeyError:
+            composition = ''
         print('Current sample composition is %s' % composition)
-        print('To change composition, rerun new_sample() with composition passed as an argument')
+        #print('To change composition, rerun new_sample() with composition passed as an argument')
+    else:
+        gs.RE.md['sample']['composition'] = composition
+        print('Current sample composition is %s' % composition)
+        #print('To change composition, rerun new_sample() with composition passed as an argument')
+    print('To change experimenters or sample, rerun new_user() or new_sample() respectively, with desired experimenter list as the argument')   
+    #time_form = str(datetime.datetime.fromtimestamp(time.time()))
+    #date = time_form[:10]
+    #hour = time_form[11:16]
+    #timestampstring = '_'.join([date, hour]) #fixme, get timestamp from central clock through bluesky
+    time_stub = _timestampstr(time.time())
+    try:
+        gs.RE.md['sample']
+    except KeyError:
+        gs.RE.md['sampl'] = {}
 
-    time_form = str(datetime.datetime.fromtimestamp(time.time()))
-    date = time_form[:10]
-    hour = time_form[11:16]
-    timestampstring = '_'.join([date, hour]) #fixme, get timestamp from central clock through bluesky
-    gs.RE.md['sample']['sample_load_time'] = timestampstring
+    gs.RE.md['sample']['sample_load_time'] = time_stub
     gs.RE.md['sample']['comments'] = comments
-
-    if verbose: print('Sample and experimenter metadata set')
+    if verbose: print('sample_load_time has been recorded: %s' % time_stub)
+    if verbose: print('Sample and experimenter metadata have been set')
     if verbose: print('To check what will be saved with your scans, type "gs.RE.md"')
 
 #### block of search functions ####
@@ -1007,16 +1043,19 @@ def time_search(startTime,stopTime=False,exp_day1=False,exp_day2=False):
 
 def sanity_check():
     user = gs.RE.md['experimenters']
+    print('Current experimenter(s) are: %s' % user)
     sample_name = gs.RE.md['sample_name']
     try:
         compo = gs.RE.md['sample']['composition']
+        print('Current sample_name is %s, composition is %s' % (sample_name, compo))
         calib_file = gs.RE.md['calibration_scan_info']['calibration_information']['from_calibration_file']
     except KeyError:
+        print('Current sample_name is %s, composition is %s' % (sample_name,''))
+    try:
+        calib_file = gs.RE.md['calibration_scan_info']['calibration_information']['from_calibration_file']
+        print('Current calibration file being used is %s' % calib_file)
+    except KeyError:
         pass
-    
-    print('Current experimenter(s) are: %s' % user)
-    print('Current sample_name is %s, composition is %s' % (sample_name, compo))
-    print('Current calibration file being used is %s' % calib_file)
     scan_info()
 
 def print_dict(d, ident = '', braces=1):
