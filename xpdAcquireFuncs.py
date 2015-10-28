@@ -147,8 +147,7 @@ def write_config(d, config_f_name):
     import configparser
     config = configparser.ConfigParser()
     for k,v in _dig_dict(d).items():
-        #config[k] = {} # TEST-> hashout create headers to config file
-        #_dig_dict(v)  # dig_dict with fill emp_dict with key-value pairs in d
+        config[k] = {}
         config[k] = v # temporarily use
     with open(config_f_name+'.cfg', 'w') as configfile:
         config.write(configfile)
@@ -163,16 +162,16 @@ def _filename_gen(header):
     file_name = '_'.join([time_stub, uid, feature])
     return file_name
 
-def save_tif(headers, tif_name = False, sum_frames = True, dark_uid=False):
-    ''' save images obtained from dataBroker as tiff format files
+def save_tif(headers, tif_name = False, sum_frames = True, dark_uid=False, temp_series = False):
+    ''' save images obtained from dataBroker as tiff format files. It returns nothing.
 
     arguments:
         headers - list - a list of header objects obtained from a query to dataBroker
-        file_name - str - optional. File name of tif file being saved.
-            default setting yields a file name including time, uid, feature of your header
-        sum_frames - bool - optional. when it is set to True, image frames contained in header will be summed into one file
-    returns:
-        nothing
+        file_name - str - optional. File name of tif file being saved. default setting yields a name made of time, uid, feature of your header
+        sum_frames - bool - optional. when it is set to True, image frames contained in header will be summed as one file
+        dark_uid - str - optional. The uid of dark_image you wish to use. If unspecified, the most recent dark stack in dark_base will beused.
+        temp_series -list - optional. List of temeprature series. Reserved for internal use, don't change it.
+
     '''
     if type(list(headers)[1]) == str:
         header_list = list()
@@ -190,6 +189,7 @@ def save_tif(headers, tif_name = False, sum_frames = True, dark_uid=False):
 #        feature = dummy[:-1]
 #        uid_val = header.start.uid[:5]
 #        time_stub =_timestampstr(header.stop.time)
+        print('Plotting and saving your dark-corrected image(s) now....')
         try:
             comment = header.start['comments']
         except KeyError:
@@ -204,7 +204,7 @@ def save_tif(headers, tif_name = False, sum_frames = True, dark_uid=False):
             cnt_time = header.start.scan_info['scan_exposure_time']
         except KeyError:
             print('scan exposure time in your header can not be found, use default 0.5 secs for dark image correction.')
-            print('Dont0 worry, a slightly off correction will not significantly degrade quality of your data') # fixme: comfort user??
+            print('Dont worry, a slightly off correction will not significantly degrade quality of your data') # fixme: comfort user??
             cnt_time = 0.5
 
         # Identify the latest dark stack
@@ -247,13 +247,12 @@ def save_tif(headers, tif_name = False, sum_frames = True, dark_uid=False):
             dark_cnt_time = 0.5 # default value
 
         # dark correction
-        print('Plotting and saving your dark-corrected image(s) now....')
         dark_num = int(np.round(cnt_time / dark_cnt_time)) # how many dark frames needed for single light image
         print('Number of dark images applied to correction your image(s): %i....' % dark_num)
         dark_img_list = np.array(get_images(dark_header,'pe1_image_lightfield')) # confirmed that it comes with reverse order
         dark_len = dark_img_list.shape[0]
         correct_imgs = []
-        print((dark_len-dark_num, dark_len))
+        #print((dark_len-dark_num, dark_len))
         for i in range(light_imgs.shape[0]):
             correct_imgs.append(light_imgs[i]-np.sum(dark_img_list[dark_len-dark_num:dark_len],0)) # use last d_num dark images
 
@@ -282,28 +281,55 @@ def save_tif(headers, tif_name = False, sum_frames = True, dark_uid=False):
                 return
 
         else:
-            for i in range(light_imgs.shape[0]):
-                if not tif_name:
-                    header_uid = header.start.uid[:5]
-                    time_stub = _timestampstr(header.stop.time)
-                    feature = _feature_gen(header)
-                    f_name ='_'.join([time_stub, header_uid, feature, '00'+str(i)+'.tif'])
-                    #f_name = '_'.join([_filename_gen(header),'00'+str(i)+'.tif'])
-                    #f_name = '_'.join(header_filename, '00'+str(i)+'.tif')
-                else:
-                    f_name = tif_name + '_00' + str(i) +'.tif'
-                #print(f_name)
-                w_name = os.path.join(W_DIR,f_name)
-                img = correct_imgs[i]
-                fig = plt.figure(f_name)
-                plt.imshow(img)
-                plt.show()
-                imsave(w_name, img) # overwrite mode now !!!!
-                if os.path.isfile(w_name):
-                    print('dark corrected %s has been saved at %s' % (f_name, W_DIR))
-                else:
-                    print('Sorry, something went wrong with your tif saving')
-                    return
+            if not temp_series:
+                for i in range(light_imgs.shape[0]):
+                    if not tif_name:
+                        header_uid = header.start.uid[:5]
+                        time_stub = _timestampstr(header.stop.time)
+                        feature = _feature_gen(header)
+                        f_name ='_'.join([time_stub, header_uid, feature, '00'+str(i)+'.tif'])
+                        #f_name = '_'.join([_filename_gen(header),'00'+str(i)+'.tif'])
+                        #f_name = '_'.join(header_filename, '00'+str(i)+'.tif')
+                    else:
+                        f_name = tif_name + '_00' + str(i) +'.tif'
+                    #print(f_name)
+                    w_name = os.path.join(W_DIR,f_name)
+                    img = correct_imgs[i]
+                    fig = plt.figure(f_name)
+                    plt.imshow(img)
+                    plt.show()
+                    imsave(w_name, img) # overwrite mode now !!!!
+                    if os.path.isfile(w_name):
+                        print('dark corrected %s has been saved at %s' % (f_name, W_DIR))
+                    else:
+                        print('Sorry, something went wrong with your tif saving')
+                        return
+            else:
+                # require input of temperature series!!!
+                for i in range(light_imgs.shape[0]):
+                    if not tif_name:
+                        header_uid = header.start.uid[:5]
+                        time_stub = _timestampstr(header.stop.time)
+                        feature = _feature_gen(header)
+                        temp = str(temp_series[i])+'k'
+                        f_name ='_'.join([time_stub, header_uid, feature, temp, '00'+str(i)+'.tif'])
+                        #f_name = '_'.join([_filename_gen(header),'00'+str(i)+'.tif'])
+                        #f_name = '_'.join(header_filename, '00'+str(i)+'.tif')
+                    else:
+                        f_name ='_'.join([tif_name, temp, '00'+str(i)+'.tif'])
+                    #print(f_name)
+                    w_name = os.path.join(W_DIR,f_name)
+                    img = correct_imgs[i]
+                    fig = plt.figure(f_name)
+                    plt.imshow(img)
+                    plt.show()
+                    imsave(w_name, img) # overwrite mode now !!!!
+                    if os.path.isfile(w_name):
+                        print('dark corrected %s has been saved at %s' % (f_name, W_DIR))
+                    else:
+                        print('Sorry, something went wrong with your tif saving')
+                        return
+
 
         # write config data
         f_name = None # clear value and re-assign it as we don't need to save multiple files
@@ -325,7 +351,7 @@ def save_tif(headers, tif_name = False, sum_frames = True, dark_uid=False):
             return
 
         w_name =None
-        '''
+        ''' 
         write_config(config_dict, w_config_name)
         if os.path.isfile(w_config_name):
             print('%s has been saved at %s' % (config_f_name, W_DIR))
@@ -529,7 +555,8 @@ def get_calibration_images (calibrant, wavelength, calibration_scan_exposure_tim
     if os.path.isfile(w_name):
         print('A summed image %s has been saved to %s' % (f_name, W_DIR))
     '''
-def get_light_images(scan_time=1.0, scan_exposure_time=0.5, scan_def=False, comments={}):
+def get_count_scan(scan_time=1.0, scan_exposure_time=0.5, scan_def=False,
+        comments={}):
     '''function for getting a light image
 
     Arguments:
@@ -539,23 +566,51 @@ def get_light_images(scan_time=1.0, scan_exposure_time=0.5, scan_def=False, comm
         scan_def - bluesky scan object - optional. user can specify their own scan and pass it
             to the function.  Not specified in normal usage.
         comments - dictionary - optional. dictionary of user defined key:value pairs.
+        scan_mode - int - mode of your scan. if scan_mode = 0, this function
+        will do count scan and if scan_mode = 1, this function will do a
+        temperature
     '''
 
     if comments:
         extra_key = comments.keys()
         for key, value in comments.items():
             gs.RE.md['user_supplied'][key] = value
+    # test if even parents layers exitst
+    try:
+        gs.RE.md['scan_info'] 
+        gs.RE.md['sample']
+        pass
+    except KeyError:
+        gs.RE.md['scan_info']={}
+        gs.RE.md['sample'] = {}
+    # Prpare hold values, KeyError means blanck state, just pass it
+    try:
+        scan_type_hold = copy.copy(gs.RE.md['scan_info']['scan_type'])
+    except KeyError:
+        pass
+    try:
+        scan_steps_hold = gs.RE.md['scan_info']['number_of_exposures']
+    except KeyError:
+        pass
+    try:
+        total_scan_duration_hold = gs.RE.md['scan_info']['total_scan_duration']
+    except KeyError:
+        pass
+    try:
+        temp_hold = gs.RE.md['sample']['temperature']  # fixme: temporarily use
+    except:
+        pass
 
     # don't expose the PE for more than 5 seconds max, set it to 1 seconds if you go beyond limit
     if scan_exposure_time > 5.0:
         print('Your exposure time is larger than 5 seconds. This can damage detector')
         print('Exposure time is set to 2 seconds')
         print('Number of exposures will be recalculated so that scan time is the same....')
-        exposure_time = 2.0
-        num = int(scan_time/exposure_time)
+        scan_exposure_time = 2.0
+        num = int(scan_time/scan_exposure_time)
         print('Number of exposures is now %s' % num)
     else:
-        num = int(scan_time/exposure_time)
+        num = int(scan_time/scan_exposure_time)
 
     if num == 0: num = 1 # at least one scan
 
@@ -564,81 +619,98 @@ def get_light_images(scan_time=1.0, scan_exposure_time=0.5, scan_def=False, comm
     else:
         scan = scan_def
 
+    # assign values from current scan
+    scan_exposure_time_hold = copy.copy(pe1.acquisition_time)
     pe1.acquisition_time = scan_exposure_time
-
-    try:
-        gs.RE.md['sample']['temp']
-        gs.RE.md['scan_info']['scan_exposure_time']
-    except KeyError:
-        gs.RE.md['sample'] = {}
-        gs.RE.md['scan_info'] = {}
-        gs.RE.md['sample']['temp'] = cs700.value[1]  # fixme: temporarily use
-        gs.RE.md['scan_info']['scan_exposure_time'] = scan_exposure_time
-        gs.RE.md['scan_info']['number_of_exposures'] = num
-        gs.RE.md['scan_info']['total_scan_duration'] = num*exposure_time
-        #gs.RE.md['scan_info']['detector'] = pe1  # pe1 is not a simple object, call it directly causes I/O Error
+    gs.RE.md['scan_info']['scan_exposure_time'] = scan_exposure_time
+    gs.RE.md['scan_info']['number_of_exposures'] = num 
+    gs.RE.md['scan_info']['total_scan_duration'] = num*scan_exposure_time
+    gs.RE.md['scan_info']['scan_type'] = 'count_scan'
+    gs.RE.md['sample']['temp'] = str(cs700.value[1])+'k'
+    #gs.RE.md['scan_info']['detector'] = pe1  # pe1 is not a simple object, call it directly causes I/O Error
 
     try:
         # fixme: code to check the filter/shutter is open
         scan.subs = [LiveTable(['pe1_image_lightfield']), LiveImage('pe1_image_lightfield')]
         gs.RE(scan)
-        save_tiff(db[-1])
-        #print('Dark corrected images have been saved to %s' % W_DIR)
-        # note, do not close the shutter again afterwards, we will do it manually outside of this function
-
-        # deconstruct the metadata
-        gs.RE.md['scan_info'] = {} # give it a blank dictionary for rubustness
+        header = db[-1]
+        #feature = _feature_gen(header)
+        filename = _filename_gen(header)
+        save_tif(header, sum_frames=True)
+        #deconstruct the metadata
+        gs.RE.md['scan_info'] ={'scan_exposure_time':
+                scan_exposure_time_hold,'number_of_exposures': scan_steps_hold, 'total_scan_duration':total_scan_duration_hold, 'scan_type': scan_type_hold}
         gs.RE.md['user_supplied'] = {}
-        gs.RE.md['sample']['temp'] = 0
-
+        gs.RE.md['sample']['temperature'] = temp_hold
     except:
-        # deconstruct the metadata
-        gs.RE.md['scan_info'] = {} # give it a blank dictionary for rubustness
+        # deconstruct the metadata        
+        gs.RE.md['scan_info'] ={'scan_exposure_time':
+                scan_exposure_time_hold,'number_of_exposures': scan_steps_hold,'total_scan_duration': total_scan_duration_hold, 'scan_type': scan_type_hold}
         gs.RE.md['user_supplied'] = {}
-        gs.RE.md['sample']['temp'] = 0
+        gs.RE.md['sample']['temperature'] = temp_hold
         print('image collection failed. Check why gs.RE(scan) is not working and rerun')
         return
 
-def get_tscan(start_temperature, final_temperature, tscan_steps, scan_exposure_time=0.5, comments={}):
+def get_temp_scan(start_temperature, final_temperature, t_steps=False, scan_exposure_time=0.5, comments={}):
     '''function for doing a temperature series scan
 
     Arguments:
+        start_temperature - float - starting temperature 
+        final_temperature - float - final temperature 
+        tscan_steps - int - optional. steps of your temeprature series, default value is your round off of your temperature range.
         scan_exposure_time - float - optional. exposure time per frame, default value is 0.5 s
-        start_temperature - float - starting point of your temperature scan
-        final_temperature - float - ending point of your temperature scan
-        tscan_steps - int - steps of your temeprature series
         comments - dictionary - optional. dictionary of user defined key:value pairs.
     '''
     if comments:
         extra_key = comments.keys()
         for key, value in comments.items():
             gs.RE.md['user_supplied'][key] = value
-
+    # test if even parents layers exitst
+    try:
+        gs.RE.md['scan_info'] 
+        gs.RE.md['sample']
+        pass
+    except KeyError:
+        gs.RE.md['scan_info']={}
+        gs.RE.md['sample'] = {}
+    # Prepare hold values, KeyError means blanck state, just pass it
+    try:
+        scan_type_hold = copy.copy(gs.RE.md['scan_info']['scan_type'])
+    except KeyError:
+        pass
+    try:
+        scan_steps_hold = gs.RE.md['scan_info']['number_of_exposures']
+    except KeyError:
+        pass
+    try:
+        total_scan_duration_hold = gs.RE.md['scan_info']['total_scan_duration']
+    except KeyError:
+        pass
 
     # don't expose the PE for more than 5 seconds max, set it to 1 seconds if you go beyond limit
     if scan_exposure_time > 5.0:
         print('Your exposure time is larger than 5 seconds. This can damage detector')
         print('Exposure time is set to 2 seconds')
-        exposure_time = 2.0
+        scan_exposure_time = 2.0
 
-    if tscan_steps == 0: tscan_steps = 1 # at least one scan
+    if not t_steps:
+        scan_steps = int(final_temperature - start_temperature)
+    else:
+        scan_steps = t_steps
+    if scan_steps == 0: scan_steps==1 # at least one scan
+
+    # assign values from current scan
     scan_cnt_time_hold = copy.copy(pe1.acquire_time)
     pe1.acquisition_time = scan_exposure_time
-
-    try:
-        gs.RE.md['scan_info']['scan_exposure_time']
-    except KeyError:
-        gs.RE.md['sample'] = {}
-        gs.RE.md['scan_info'] = {}
-        gs.RE.md['scan_info']['scan_exposure_time'] = scan_exposure_time
-        gs.RE.md['scan_info']['number_of_exposures'] = scan_steps
-        gs.RE.md['scan_info']['total_scan_duration'] = scan_steps*exposure_time
-        #gs.RE.md['scan_info']['detector'] = pe1  # pe1 is not a simple object, call it directly causes I/O Error
+    gs.RE.md['scan_info']['scan_exposure_time'] = scan_exposure_time
+    gs.RE.md['scan_info']['number_of_exposures'] = scan_steps
+    gs.RE.md['scan_info']['total_scan_duration'] = scan_steps*scan_exposure_time
+    gs.RE.md['scan_info']['scan_type'] = 'temp_scan'
+    #gs.RE.md['scan_info']['detector'] = pe1  # pe1 is not a simple object, call it directly causes I/O Error
 
     try:
         # fixme: code to check the filter/shutter is open
-
-        tscan = bluesky.scans.AbsScan(cs700, [pe1], start_temperature, final_temperature, tscan_steps)
+        tscan = bluesky.scans.AbsScan(cs700, [pe1], start_temperature, final_temperature, scan_steps)
         tscan.subs = [LiveTable(['pe1_image_lightfield']), LiveImage('pe1_image_lightfield')]
 
         gs.RE(tscan)
@@ -647,23 +719,19 @@ def get_tscan(start_temperature, final_temperature, tscan_steps, scan_exposure_t
         filename = _filename_gen(header)
         #temp = header.start.temperaute ????????? fixme: figure out where is this data stored in header, must be a list
         '''pseudo code
-        for t in temp:
-            f_name = '_'.join('temp', filename, t+'K.tif')
-            w_name = os.path.join(w_dir, f_name)
-            save_tiff(header, file_name =f_name, sum_frames = False)
-
-        #print('Dark corrected images have been saved to %s' % W_DIR)
+        #fixme: get temeprature series !!!!!!
+        save_tiff(header, sum_frames = False, temp_series=temp)
         # note, do not close the shutter again afterwards, we will do it manually outside of this function
-		    '''
+	    '''
         # deconstruct the metadata
-        gs.RE.md['scan_info'] = {} # give it a blank dictionary for rubustness
+        gs.RE.md['scan_info'] ={'scan_exposure_time':
+                scan_exposure_time_hold,'number_of_exposures': scan_steps_hold,'total_scan_duration': total_scan_duration_hold, 'scan_type': scan_type_hold}
         gs.RE.md['user_supplied'] = {}
-        #gs.RE.md['sample']['temp'] = 0
     except:
-        # deconstruct the metadata
-        gs.RE.md['scan_info'] = {} # give it a blank dictionary for rubustness
+        # deconstruct the metadata        
+        gs.RE.md['scan_info'] ={'scan_exposure_time':
+                scan_exposure_time_hold,'number_of_exposures': scan_steps_hold,'total_scan_duration': total_scan_duration_hold, 'scan_type': scan_type_hold}
         gs.RE.md['user_supplied'] = {}
-        #gs.RE.md['sample']['temp'] = 0
         print('image collection failed. Check why gs.RE(scan) is not working and rerun')
         return
 
