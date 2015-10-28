@@ -42,7 +42,8 @@ S_DIR = '/home/xf28id1/xpdUser/script_base'             # where the user scripts
 
 def _feature_gen(header):
     ''' generate a human readable file name. It is made of time + uid + sample_name + user
-    filed will be skipped if it doesn't exist
+
+    field will be skipped if it doesn't exist
     '''
     uid = header.start.uid
     time_stub = _timestampstr(header.start.time)
@@ -85,9 +86,8 @@ def _MD_template():
 
     gs.RE.md['sample'] = {}
     gs.RE.md['sample']['composition'] = {}
-
-    gs.RE.md['dark_sacn_info'] = {}
-
+    
+    gs.RE.md['dark_scan_info'] = {}
     gs.RE.md['scan_info'] = {}
 
     gs.RE.md['calibration_scan_info'] = {}
@@ -95,7 +95,7 @@ def _MD_template():
 
     return gs.RE.md
 
-def sacn_info():
+def scan_info():
     all_sacn_info = [gs.RE.md.scan_info['exposure_time'],
             gs.RE.md.calibrationscan_info['calibration_exposure_time'],
             gs.RE.md.dark_scan_info['dark_exposure_time']]

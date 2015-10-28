@@ -1,8 +1,8 @@
 # python fixme
-def end_beamtime():
+def end_beamtime(userID):
     '''cleans up at the end of a beamtime
 
-    Function takes all the user-generated tifs and config files and archives them to a
+    Function takes all the user-generated tifs and config files, etc., and archives them to a
     directory in the remote file-store with filename B_DIR/useriD
 
     Arguments:
