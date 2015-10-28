@@ -53,6 +53,8 @@ def _feature_gen(header):
             # truncate length
             if len(header.start[key])>12:
                 value = header.start[key][:12]
+            else:
+                value = header.start[key]
             # clear space
             dummy = [ ch for ch in list(value) if ch!=' ']
             dummy_list.append(''.join(dummy))  # feature list elements is at the first level, as it should be
@@ -1006,8 +1008,12 @@ def time_search(startTime,stopTime=False,exp_day1=False,exp_day2=False):
 def sanity_check():
     user = gs.RE.md['experimenters']
     sample_name = gs.RE.md['sample_name']
-    compo = gs.RE.md['sample']['composition']
-    calib_file = gs.RE.md['calibration_scan_info']['calibration_information']['from_calibration_file']
+    try:
+        compo = gs.RE.md['sample']['composition']
+        calib_file = gs.RE.md['calibration_scan_info']['calibration_information']['from_calibration_file']
+    except KeyError:
+        pass
+    
     print('Current experimenter(s) are: %s' % user)
     print('Current sample_name is %s, composition is %s' % (sample_name, compo))
     print('Current calibration file being used is %s' % calib_file)
