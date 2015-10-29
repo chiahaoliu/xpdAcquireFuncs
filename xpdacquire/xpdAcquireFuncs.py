@@ -26,7 +26,7 @@ import matplotlib.pyplot as plt
 import matplotlib.image as mpimg
 from configparser import ConfigParser
 
-import localimports
+import xpdacquire.localimports
 
 #pd.set_option('max_colwidth',70)
 pd.set_option('colheader_justify','left')
