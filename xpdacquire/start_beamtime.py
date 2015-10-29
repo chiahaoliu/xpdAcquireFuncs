@@ -1,46 +1,50 @@
-def start_beamtime():
-    '''sets up a new beamtime
+#!/usr/bin/env python
 
-    Function checks that tif_base, dark_base etc. is empty from the previous beamtime
+import sys
+import os.path
+
+
+def _make_datapaths():
+    '''Create all data directories if they do not exist yet.
     '''
-    import os
-    
-    HOME_DIR = '/home/xf28id1/xpdUser'
-    
-    W_DIR = '/home/xf28id1/xpdUser/tif_base'
-    D_DIR = '/home/xf28id1/xpdUser/dark_base'
-    R_DIR = '/home/xf28id1/xpdUser/config_base'
-    S_DIR = '/home/xf28id1/xpdUser/script_base'
+    from xpdacquire.config import datapath
+    for d in datapath.allfolders:
+        if os.path.isdir(d):  continue
+        os.mkdir(d)
+    return
 
 
-    os.chdir(HOME_DIR)
-    current_dir = os.getcwd()
-    print('successfully moved to working directory: ')
-    print(current_dir)
-    
-    w_ex = os.path.isdir(W_DIR)
-    d_ex = os.path.isdir(D_DIR)
-    r_ex = os.path.isdir(R_DIR)
-    s_ex = os.path.isdir(S_DIR)) # script base
+def _ensure_empty_datapaths():
+    '''Raise RuntimeError if datapath.base has any file except those expected.
+    '''
+    from xpdacquire.config import datapath
+    allowed = set(datapath.allfolders)
+    spurious = []
+    # collect spurious files or directories within the base folder
+    for r, dirs, files in os.walk(datapath.base):
+        for d in dirs:
+            if os.path.join(r, d) not in allowed:
+                spurious.append(d)
+            # all files are spurious
+        spurious += [os.path.join(r, f) for f in files]
+    if spurious:
+        emsg = 'The working directory {} has unknown files:{}'.format(
+                datapath.base, "\n  ".join([''] + spurious))
+        raise RuntimeError(emsg)
+    return
 
-    if not (w_ex and d_ex and r_ex and s_ex):
-        os.mkdir(W_DIR)
-        os.mkdir(D_DIR)
-        os.mkdir(R_DIR)
-        os.mkdir(S_DIR)
 
-    # fixme check that all of tif_base, dark_base, config_base are empty
-    w_len = len(os.listdir(W_DIR))
-    d_len = len(os.listdir(D_DIR))
-    r_len = len(os.listdir(R_DIR))
-    s_len = len(os.listdir(S_DIR)) # script base
-    if not (w_len!=0 and d_len!=0 and r_len!=0 and s_len!=0):
-        print('the working directories are not empty.')
-        print('if this is really a new beamtime, then please run end_beamtime.py to archive')
-        print('the current user-generated data and empty the directories for the new user.')
-        return
-    else:
-        print('everything is ready to begin.  Please continue with icollection')
+def start_beamtime():
+    _make_datapaths()
+    _ensure_empty_datapaths()
+    print('Everything is ready to begin.  Please continue with icollection.')
+    return
+
 
 if __name__ == '__main__':
-    start_beamtime()
+    try:
+        start_beamtime()
+    except RuntimeError as e:
+        print(e, file=sys.stderr)
+        print("Ask Sanjit what to do next.", file=sys.stderr)
+        sys.exit(1)
