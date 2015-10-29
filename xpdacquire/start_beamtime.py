@@ -34,9 +34,30 @@ def _ensure_empty_datapaths():
     return
 
 
+def _input_metadata():
+    '''Ask user for various metadata related to this experiment.
+    '''
+    from bluesky.standard_config import gs
+    saf = input('SAF number of this beamtime: ')
+    gs.RE.md['saf'] = saf.strip()
+    pn = input('Principal Investigator (PI) name: ')
+    gs.RE.md['pi_name'] = pn.strip()
+    enames = input('Other experimenter names separated by commas: ')
+    exlist = [n.strip() for n in enames.split(',')]
+    exlist = [pn] + [n for n in exlist if n != pn]
+    gs.RE.md['experimenters'] = exlist
+    # TODO - check if user wants to reset the scan_id
+    # input("Reset scan_id to [{current_scan_id}]: ") ....
+    return
+
+
 def start_beamtime():
+    from xpdacquire.xpdacquirefuncs import _MD_template
     _make_datapaths()
     _ensure_empty_datapaths()
+    # clear metadata and update from blank template
+    _MD_template()
+    _input_metadata()
     print('Everything is ready to begin.  Please continue with icollection.')
     return
 
