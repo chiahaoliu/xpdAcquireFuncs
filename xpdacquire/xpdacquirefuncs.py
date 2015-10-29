@@ -15,18 +15,12 @@ Instructions for reaching it are at the XPD beamline
 Code is currently hosted at gitHub.com/chiahaoliu/xpdAcquireFuncs
 '''
 import os
-import sys
 import time
 import copy
 import datetime
 import numpy as np
 import pandas as pd
-import matplotlib as ml
-import matplotlib.pyplot as plt
-import matplotlib.image as mpimg
-from configparser import ConfigParser
 
-import xpdacquire.localimports
 
 #pd.set_option('max_colwidth',70)
 pd.set_option('colheader_justify','left')
@@ -61,7 +55,7 @@ def _feature_gen(header):
             dummy_list.append(''.join(dummy))  # feature list elements is at the first level, as it should be
         except KeyError:
             pass
-        
+
     inter_list = []
     for el in dummy_list:
         if isinstance(el, list): # if element is a list
@@ -86,7 +80,7 @@ def _MD_template():
 
     gs.RE.md['sample'] = {}
     gs.RE.md['sample']['composition'] = {}
-    
+
     gs.RE.md['dark_scan_info'] = {}
     gs.RE.md['scan_info'] = {}
 
@@ -176,6 +170,7 @@ def save_tif(headers, tif_name = False, sum_frames = True, dark_uid=False, temp_
         temp_series -list - optional. List of temeprature series. Reserved for internal use, don't change it.
 
     '''
+    import matplotlib.pyplot as plt
     if type(list(headers)[1]) == str:
         header_list = list()
         header_list.append(headers)
@@ -267,7 +262,7 @@ def save_tif(headers, tif_name = False, sum_frames = True, dark_uid=False, temp_
             correct_imgs.append(light_imgs[i]-np.sum(dark_img_list[dark_len-dark_num:dark_len],0)) # use last d_num dark images
 
 
-       # header_filename =_filename_gen(header)    
+       # header_filename =_filename_gen(header)
         if sum_frames:
             if not tif_name:
                 header_uid = header.start.uid[:5]
@@ -361,7 +356,7 @@ def save_tif(headers, tif_name = False, sum_frames = True, dark_uid=False, temp_
             return
 
         w_name =None
-        ''' 
+        '''
         write_config(config_dict, w_config_name)
         if os.path.isfile(w_config_name):
             print('%s has been saved at %s' % (config_f_name, W_DIR))
@@ -588,7 +583,7 @@ def get_count_scan(scan_time=1.0, scan_exposure_time=0.5, scan_def=False,
             gs.RE.md['user_supplied'][key] = value
     # test if parent layers exitst
     try:
-        gs.RE.md['scan_info'] 
+        gs.RE.md['scan_info']
         gs.RE.md['sample']
         pass
     except KeyError:
@@ -633,14 +628,14 @@ def get_count_scan(scan_time=1.0, scan_exposure_time=0.5, scan_def=False,
         scan = bluesky.scans.Count([pe1],num)
     else:
         scan = scan_def
-    
+
 
     # assign values from current scan
     scan_exposure_time_hold = copy.copy(pe1.acquire_time)
     pe1.acquisition_time = scan_exposure_time
-    
+
     gs.RE.md['scan_info']['scan_exposure_time'] = scan_exposure_time
-    gs.RE.md['scan_info']['number_of_exposures'] = num 
+    gs.RE.md['scan_info']['number_of_exposures'] = num
     gs.RE.md['scan_info']['total_scan_duration'] = num*scan_exposure_time
     gs.RE.md['scan_info']['scan_type'] = 'count_scan'
     gs.RE.md['sample']['temp'] = str(cs700.value[1])+'k'
@@ -660,7 +655,7 @@ def get_count_scan(scan_time=1.0, scan_exposure_time=0.5, scan_def=False,
         gs.RE.md['user_supplied'] = {}
         gs.RE.md['sample']['temperature'] = temp_hold
     except:
-        # deconstruct the metadata        
+        # deconstruct the metadata
         gs.RE.md['scan_info'] ={'scan_exposure_time':
                 scan_exposure_time_hold,'number_of_exposures': scan_steps_hold,'total_scan_duration': total_scan_duration_hold, 'scan_type': scan_type_hold}
         gs.RE.md['user_supplied'] = {}
@@ -672,8 +667,8 @@ def get_temp_scan(start_temperature, final_temperature, t_steps=False, scan_expo
     '''function for doing a temperature series scan
 
     Arguments:
-        start_temperature - float - starting temperature 
-        final_temperature - float - final temperature 
+        start_temperature - float - starting temperature
+        final_temperature - float - final temperature
         tscan_steps - int - optional. steps of your temeprature series, default value is your round off of your temperature range.
         scan_exposure_time - float - optional. exposure time per frame, default value is 0.5 s
         comments - dictionary - optional. dictionary of user defined key:value pairs.
@@ -684,7 +679,7 @@ def get_temp_scan(start_temperature, final_temperature, t_steps=False, scan_expo
             gs.RE.md['user_supplied'][key] = value
     # test if even parents layers exitst
     try:
-        gs.RE.md['scan_info'] 
+        gs.RE.md['scan_info']
         gs.RE.md['sample']
         pass
     except KeyError:
@@ -739,13 +734,13 @@ def get_temp_scan(start_temperature, final_temperature, t_steps=False, scan_expo
         #fixme: get temeprature series !!!!!!
         save_tiff(header, sum_frames = False, temp_series=temp)
         # note, do not close the shutter again afterwards, we will do it manually outside of this function
-	    '''
+        '''
         # deconstruct the metadata
         gs.RE.md['scan_info'] ={'scan_exposure_time':
                 scan_exposure_time_hold,'number_of_exposures': scan_steps_hold,'total_scan_duration': total_scan_duration_hold, 'scan_type': scan_type_hold}
         gs.RE.md['user_supplied'] = {}
     except:
-        # deconstruct the metadata        
+        # deconstruct the metadata
         gs.RE.md['scan_info'] ={'scan_exposure_time':
                 scan_exposure_time_hold,'number_of_exposures': scan_steps_hold,'total_scan_duration': total_scan_duration_hold, 'scan_type': scan_type_hold}
         gs.RE.md['user_supplied'] = {}
@@ -770,7 +765,7 @@ def load_calibration(config_file = False, config_dir = False):
     config_dir - str - optional. directory where your config files are located. If not specified, default directory is used
     normal usage is not to use change these defaults.
     '''
-
+    from configparser import ConfigParser
     if not config_dir:
         read_dir = R_DIR
     else:
@@ -877,7 +872,7 @@ def new_sample(sample_name, composition = '', experimenters=[], comments={}, ver
         gs.RE.md['sample']['composition'] = composition
         print('Current sample composition is %s' % composition)
         #print('To change composition, rerun new_sample() with composition passed as an argument')
-    print('To change experimenters or sample, rerun new_user() or new_sample() respectively, with desired experimenter list as the argument')   
+    print('To change experimenters or sample, rerun new_user() or new_sample() respectively, with desired experimenter list as the argument')
     #time_form = str(datetime.datetime.fromtimestamp(time.time()))
     #date = time_form[:10]
     #hour = time_form[11:16]
@@ -895,14 +890,18 @@ def new_sample(sample_name, composition = '', experimenters=[], comments={}, ver
     if verbose: print('To check what will be saved with your scans, type "gs.RE.md"')
 
 #### block of search functions ####
-def get_keys(fuzzy_key, d=gs.RE.md, verbose=0):
+def get_keys(fuzzy_key, d=None, verbose=0):
     ''' fuzzy search on key names contains in a nested dictionary.
     Return all possible key names starting with fuzzy_key
 :
     Arguments:
+
     fuzzy_key - str - possible key name, can be fuzzy like 'exp', 'sca' or nearly complete like 'experiment'
-    d - dict - dictionary you want searched for. Default is set to current metadata dictionary
+    d        -- dictionary you want to search.  Use bluesky metadata store
+                when not specified.
     '''
+    if d is None:
+        d = _bluesky_global_state()
     if hasattr(d,'items'):
         rv = [f for f in d.keys() if f.startswith(fuzzy_key)]
         if not verbose: print('Possible key(s) to your search is %s' % rv)
@@ -910,13 +909,16 @@ def get_keys(fuzzy_key, d=gs.RE.md, verbose=0):
         return rv
         get_keys(fuzzy_key, d.values())
 
-def get_keychain(wanted_key, d = gs.RE.md):
+def get_keychain(wanted_key, d=None):
     ''' Return keychian(s) of specific key(s) in a nested dictionary
 
     argumets:
     wanted_key - str - name of key you want to search for
-    d - dict - dictionary you want searched for. Default is set to current metadata dictionary
+    d        -- dictionary you want to search.  Use bluesky metadata store
+                when not specified.
     '''
+    if d is None:
+        d = _bluesky_global_state()
     for k, v in d.items():
         if isinstance(v, dict):
             result = get_keychain(wanted_key, v) # dig in nested element
@@ -926,15 +928,17 @@ def get_keychain(wanted_key, d = gs.RE.md):
             return [k]
 
 
-def build_keychain_list(key_list, d = gs.RE.md, verbose = 1):
+def build_keychain_list(key_list, d=None, verbose = 1):
     ''' Return a keychain list that yields all parent keys for every key in key_list
         E.g. d = {'layer1':{'layer2':{'mykey':'value'}}}
             build_keychain_list([layer2, mykey],d) = ['layer1', 'layer1.layer2']
     argumets:
     key_list - str or list - name of key(s) you want to search for
-    d - dict - dictionary you want searched for. Default is set to current metadata dictionary
-
+    d        -- dictionary you want to search.  Use bluesky metadata store
+                when not specified.
     '''
+    if d is None:
+        d = _bluesky_global_state()
     result = []
     if isinstance(key_list, str):
         key_list_operate = []
@@ -1199,6 +1203,13 @@ def _clean_metadata():
     for key in extra_key_list:
         del(gs.RE.md[key])
     gs.RE.md['sample'] = {}
+
+
+def _bluesky_global_state():
+    '''Import and return the global state from bluesky.
+    '''
+    from bluesky.standard_config import gs
+    return gs
 
 
 # Holding place
