@@ -13,16 +13,16 @@ def end_beamtime(userID):
     W_DIR = '/home/xf28id1/xpdUser/tif_base'                # where the user-requested tif's go.  Local drive
     R_DIR = '/home/xf28id1/xpdUser/config_base'             # where the xPDFsuite generated config files go.  Local drive
     D_DIR = '/home/xf28id1/xpdUser/dark_base'               # where the tifs from dark-field collections go. Local drive
-    B_DIR = '/home/xf28id1/pe1_data'                        # default networked drive where all tifs are automatically written but also user-generated data will be stored
+    B_DIR = '/tmp/pe1_data'                        # default networked drive where all tifs are automatically written but also user-generated data will be stored
     while True:
-        userID = input('Please enter the beamline ID (name) of the user-group(with no spaces):')
-        print('Checking if your input contains invalid file name in unix system...')
+        userID = input('Please enter the SAF number of this beamtime(no space): ')
+        print('Checking if your input results in invalid directory name in unix system...')
         # check if name is a valid name
         clean_name = [ ch for ch in userID if ch.isalnum()]
         clean_path = ''.join(clean_name)
         backup_trunk = os.path.join(B_DIR,clean_path)
         print('Current data in tif_base, dark_base and config_base will be moved to %s' % backup_trunk)
-        userJustify = input('Please confirm again that is a correct path (yes/no)')
+        userJustify = input('Please confirm again that is a correct path (yes/no) :')
         if userJustify == 'yes':
             break
         else:
@@ -57,21 +57,32 @@ def end_beamtime(userID):
         print('do you want to create a new backup directory for a new beamtime with this user?')
         print('to add files to the existing backup directory hit return.')
         respo = input('Otherwise, enter a new directory name, e.g., "secondbeamtime":')
-    if str(respo) != '':
-        bdir = os.path.join.(bdir,str(respo))
-        pass
-    elif str(respo) == '':
-        print('please enter a new directory name and try again')
-        return
+        if str(respo) != '':
+            bdir = os.path.join.(bdir,str(respo))
+        elif str(respo) == '':
+            print('please enter a new directory name and try again')
+            return
 
     # fixme mv tif_base, dark_base and config_base in the backup place then empty them on the local drive
     print('Now we are about to move files....')
     todir_w = os.path.join(bdir,W_DIR)
     todir_d = os.path.join(bdir,D_DIR)
-    todir_r = os.path.join(bdir,r_DIR)
-    os.rename(W_DIR, todir_w)
-    os.rename(D_DIR, todir_d)
-    os.rename(R_DIR, todir_r)
+    todir_r = os.path.join(bdir,R_DIR)
+    todir_s = os.path.join(bdir,S_DIR)
+    dir_list = [todir_w, todir_d, todir_r, todir_s]
+    try:
+        for el in dir_list:
+            with open(os.join(el,'writting_test.txt')) as f:
+                f.write('Test writting permission ....')
+    except FileNotFoundError:
+        print('You do not have writting priveleges on all the directories, either already exits or you are not root')
+        print('Please reach out IT sector or beamline scientists for help')
+        print('Stop moving data...')
+        return
+
+    os.renames(W_DIR, todir_w)
+    os.renames(D_DIR, todir_d)
+    os.renames(R_DIR, todir_r)
     print('All user generated files have been moved from:')
     print(W_DIR)
     print(R_DIR)

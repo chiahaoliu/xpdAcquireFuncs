@@ -231,6 +231,7 @@ def save_tif(headers, tif_name = False, sum_frames = True, dark_uid=False, temp_
         if not dark_uid:
             try:
                 last_dark_uid # see if last_dark_uid exists
+                dark_header = db[str(last_dark_uid)]
             except NameError:
                 # if not, start sorting in dark_base
                 uid_list = []
@@ -298,8 +299,8 @@ def save_tif(headers, tif_name = False, sum_frames = True, dark_uid=False, temp_
                         header_uid = header.start.uid[:5]
                         time_stub = _timestampstr(header.stop.time)
                         feature = _feature_gen(header)
-                        f_name ='_'.join([time_stub, header_uid, feature, '00'+str(i)+'.tif'])
-                        #f_name = '_'.join([_filename_gen(header),'00'+str(i)+'.tif'])
+                        #f_name ='_'.join([time_stub, header_uid, feature, '00'+str(i)+'.tif'])
+                        f_name = '_'.join([_filename_gen(header),'00'+str(i)+'.tif'])
                         #f_name = '_'.join(header_filename, '00'+str(i)+'.tif')
                     else:
                         f_name = tif_name + '_00' + str(i) +'.tif'
@@ -323,8 +324,8 @@ def save_tif(headers, tif_name = False, sum_frames = True, dark_uid=False, temp_
                         time_stub = _timestampstr(header.stop.time)
                         feature = _feature_gen(header)
                         temp = str(temp_series[i])+'k'
-                        f_name ='_'.join([time_stub, header_uid, feature, temp, '00'+str(i)+'.tif'])
-                        #f_name = '_'.join([_filename_gen(header),'00'+str(i)+'.tif'])
+                        #f_name ='_'.join([time_stub, header_uid, feature, temp, '00'+str(i)+'.tif'])
+                        f_name = '_'.join([_filename_gen(header), temp, '00'+str(i)+'.tif'])
                         #f_name = '_'.join(header_filename, '00'+str(i)+'.tif')
                     else:
                         f_name ='_'.join([tif_name, temp, '00'+str(i)+'.tif'])
@@ -362,15 +363,14 @@ def save_tif(headers, tif_name = False, sum_frames = True, dark_uid=False, temp_
             return
 
         w_name =None
-        '''
+        
         write_config(config_dict, w_config_name)
         if os.path.isfile(w_config_name):
             print('%s has been saved at %s' % (config_f_name, W_DIR))
         else:
             print('Sorry, something went wrong when saving your config data. Please use write_config() function to try again')
             # very unlikely to happen but still leave it here
-        '''
-
+        
 
 def get_dark_images(num=300, dark_scan_eposure_time=0.2):
     ''' Manually acquire stacks of dark images that will be used for dark subtraction later
@@ -1188,6 +1188,27 @@ def prompt_save(name,doc):
                 print('Sorry, something went wrong with your tif saving')
                 return
 '''
+def _get_value(key, d=gs.RE.md):
+    ''' return any key value from current nested metadata dictionary
+
+    argument:
+    key_chain - str - name of certain key, it will be sent to get_keychain()
+    d - dict - set to be current dictionary
+    '''
+    keychain = get_keychain(key, d=gs.RE.md) # get keychain from current md
+    key_bg = keychai.pop() # get rid of the last one, which is key
+    if key_bg == key:
+        pass
+    else:
+        return
+    keychain.reverse() # reverse it as we want top-down map
+    d0 = d
+    while keychain:
+        value = d0.get(keychain.pop())
+        d0 = value
+    return value
+
+
 def _timestampstr(timestamp):
     time= str(datetime.datetime.fromtimestamp(timestamp))
     date = time[:10]

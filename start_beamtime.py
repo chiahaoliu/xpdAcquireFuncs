@@ -16,8 +16,19 @@ def start_beamtime():
     os.chdir(HOME_DIR)
     current_dir = os.getcwd()
     print('successfully moved to working directory: ')
-    print(current_dir+'\n')
+    print(current_dir)
     
+    w_ex = os.path.isdir(W_DIR)
+    d_ex = os.path.isdir(D_DIR)
+    r_ex = os.path.isdir(R_DIR)
+    s_ex = os.path.isdir(S_DIR)) # script base
+
+    if not (w_ex and d_ex and r_ex and s_ex):
+        os.mkdir(W_DIR)
+        os.mkdir(D_DIR)
+        os.mkdir(R_DIR)
+        os.mkdir(S_DIR)
+
     # fixme check that all of tif_base, dark_base, config_base are empty
     w_len = len(os.listdir(W_DIR))
     d_len = len(os.listdir(D_DIR))
