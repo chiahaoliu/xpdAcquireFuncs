@@ -229,14 +229,14 @@ def save_tif(headers, tif_name = False, sum_frames = True, dark_uid=False, temp_
 
 
         if not dark_uid:
-	    try:
-	        last_dark_uid # see if last_dark_uid exists
-	    except NameError:
-            # if not, start sorting in dark_base
-	        uid_list = []
-	        f_d = [ f for f in os.listdir(D_DIR) ]
-	        for f in f_d:
-		    uid_list.append(f[:5]) # get uids in dark base
+            try:
+                last_dark_uid # see if last_dark_uid exists
+            except NameError:
+                # if not, start sorting in dark_base
+                uid_list = []
+                f_d = [ f for f in os.listdir(D_DIR) ]
+                for f in f_d:
+                    uid_list.append(f[:5]) # get uids in dark base
                 uid_unique = np.unique(uid_list)
                 dark_header_list = []
                 for d_uid in uid_unique:
@@ -1121,7 +1121,7 @@ def time_search(startTime,stopTime=False,exp_day1=False,exp_day2=False):
     event_time = list(event_time)
 
     print('||You assign a time search in the period:\n'+str(timeHead)+' and '+str(timeTail)+'||' )
-    print('||Your search gives out '+str(len(event_time))+' results||')
+    print('||Your search gives out '+str(len(header_time))+' results||')
 
     return header_time
 
