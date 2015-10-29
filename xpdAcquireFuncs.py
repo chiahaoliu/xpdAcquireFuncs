@@ -199,7 +199,14 @@ def save_tif(headers, tif_name = False, sum_frames = True, dark_uid=False, temp_
         except KeyError:
             pass
         # get images and expo time from headers
-        light_imgs = np.array(get_images(header,'pe1_image_lightfield'))
+        try:
+            light_imgs = np.array(get_images(header,'pe1_image_lightfield'))
+        except IndexError:
+            uid = header.start.uid
+            print('This header with uid = %s does not have 2D image' % uid)
+            print('Was area detector correctly mounted then?')
+            print('Stop saving')
+            return
         try:
             cnt_time = header.start.scan_info['scan_exposure_time']
         except KeyError:
@@ -771,7 +778,7 @@ def load_calibration(config_file = False, config_dir = False):
         config_file_stub = str(f_recent)
         f_name = os.path.join(read_dir, config_file_stub)
         if len(f_sort) >0:
-            print('Using %s, the most recent config file that was found in %s' % (config_file_stub, read_dir))
+            print('Using %s, the most recent config file that was found' % config_file_stub)
         else:
             print('There is no ".cfg" file in '+ read_dir)
             print('make sure the config file has been written in that directory and has extension ".cfg"')
@@ -783,7 +790,7 @@ def load_calibration(config_file = False, config_dir = False):
             f_time = _timestampstr(os.path.getmtime(f_name)) # time of config file
             print('Using user-supplied config file: %s located at %s' % (config_file, read_dir))
         else:
-            print('Your config file '+config_file+' is not found. Please check again your directory and file name')
+            print('Your config file %s is not found at %s Please check again your directory and filename' % (config_file, read_dir))
             return
 
     # read config file into a dirctionary
@@ -805,7 +812,8 @@ def load_calibration(config_file = False, config_dir = False):
                 config_dict[option] = None
     gs.RE.md['calibration_scan_info']['calibration_information'] = {'from_calibration_file':str(config_file_stub),'calib_file_creation_date':f_time, 'config_data':config_dict}
 
-    print('Calibration metadata will be saved in dictionary "calibration_information" with subsequent scans.\nType gs.RE.md to check.')
+    print('Calibration metadata will be saved in dictionary "calibration_information" with subsequent scans')
+    print('Type gs.RE.md to check if config data has been stored properly')
     print('Run load_calibration() again to update/switch your config file')
 
 def new_user(user_list):
@@ -1007,45 +1015,39 @@ def table_gen(headers):
     headers - list - a list of bluesky header objects
 
     '''
-    plt_list = []
-    cal_list = []
-    feature_list = []
-    comment_list = []
-    uid_list = []
+    plt_list = list()
+    feature_list = list()
+    comment_list = list()
+    uid_list = list()
 
     if type(list(headers)[1]) == str:
-        header_list = [headers]
+        header_list = []
+        header_list.append(headers)
     else:
         header_list = headers
 
     for header in header_list:
-        #dummy = ''
-        #dummy_key_list = [e for e in header.start.keys() if e in feature_list] # store list independently
-        feature = _feature_gen(header)
-        time_stub = _timestampstr(header.start.time)
-        uid = header.start.uid
-        uid_list.append(uid[:5])
-        #for key in dummy_key_list:
-            #dummy += str(header.start[key])+'_'
-        f_name = "_".join(time_stub, feature)
+        #feature = _feature_gen(header)
+        #time_stub = _timestampstr(header.stop.time)
+        #header_uid = header.start.uid
+        #uid_list.append(header_uid[:5])
+        #f_name = "_".join([time_stub, feature])
+        f_name =_filename_gen(header)
         feature_list.append(f_name)
 
         try:
             comment_list.append(header.start['comments'])
         except KeyError:
-            commet_list.append('None')
-        #try:
-            #cal_list.append(header.start['calibration'])
-        #except KeyError:
-            #pass
+            comment_list.append('None')
         try:
-            uid_list.append(header.start['uid'])
+            uid_list.append(header.start['uid'][:5])
         except KeyError:
-            pass
+            # jsut in case, it should never happen
+            print('Some of your data do not even have a uid, it is very dangerous, please contact beamline scientist immediately')
     plt_list = [feature_list, comment_list, uid_list] # u_id for ultimate search
     inter_tab = pd.DataFrame(plt_list)
     tab = inter_tab.transpose()
-    tab.columns=['Features', 'Comments', 'u_id']
+    tab.columns=['Features', 'Comments', 'u_id_list']
 
     return tab
 
