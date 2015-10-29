@@ -70,6 +70,7 @@ def _MD_template():
     ''' use to generate idealized metadata structure, for pictorial memory and
     also for data cleaning.
     '''
+    gs = _bluesky_global_state()
     _clean_metadata()
     gs.RE.md['iscalib'] = 0
     gs.RE.md['isdark'] = 0
@@ -1199,6 +1200,7 @@ def _clean_metadata():
     reserve for completely cleaning metadata dictionary
     return nothing
     '''
+    gs = _bluesky_global_state()
     extra_key_list = [ f for f in gs.RE.md.keys() if f not in default_keys]
     for key in extra_key_list:
         del(gs.RE.md[key])
