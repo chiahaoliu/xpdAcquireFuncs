@@ -1021,6 +1021,25 @@ def search(desired_value, *args, **kwargs):
             dummy_search_dict = {}
             dummy_search_dict[keychain_list[i]] = desired_value
             dummy_search_dict['group'] = 'XPD' # create an anchor as mongoDB and_search needs at least 2 key-value pairs
+            search_header = db(**dummy_search_dict)
+            search_header_list.append(search_header)
+            print('Your %ith search "%s=%s" yields %i headers' % (i,
+                keychain_list[i], desired_value, len(search_header)))
+            return search_header_list
+    elif not desired_value and kwars:
+        if len(kwargs)>1:
+            search_header = db(**kwargs)
+        elif len(kwargs) == 1:
+            kwargs['group'] = 'XPD'
+            search_header = db(**kwargs)
+        else:
+            print('You gave empty search criteria. Please try again')
+            return
+        return search_header
+    else:
+        print('Sorry, your search is somehow unrecongnizable. Please make sure you are putting values to right fields')
+
+
 
 
 # Holding place
