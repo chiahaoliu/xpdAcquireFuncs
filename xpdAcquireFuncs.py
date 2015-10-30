@@ -72,6 +72,13 @@ def _feature_gen(header):
     feature = "_".join(inter_list)
     return feature
 
+def _timestampstr(timestamp):
+    time = str(datetime.datetime.fromtimestamp(timestamp))
+    date = time[:10]
+    hour = time[11:16]
+    timestampstring = '_'.join([date,hour])
+    return timestampstring
+
 def _MD_template():
     ''' use to generate idealized metadata structure, for pictorial memory and
     also for data cleaning.
@@ -206,7 +213,7 @@ def save_tif(headers, tif_name = False, sum_frames = True, dark_uid=False, temp_
             light_imgs = np.array(get_images(header,'pe1_image_lightfield'))
         except IndexError:
             uid = header.start.uid
-            print('This header with uid = %s does not have 2D image' % uid)
+            print('This header with uid = %s does not contain any image' % uid)
             print('Was area detector correctly mounted then?')
             print('Stop saving')
             return
@@ -770,15 +777,18 @@ def load_calibration(config_file = False, config_dir = False):
     config_dir - str - optional. directory where your config files are located. If not specified, default directory is used
     normal usage is not to use change these defaults.
     '''
-
+    # figure out directory to read from
     if not config_dir:
         read_dir = R_DIR
     else:
         read_dir = str(config_dir)
 
     if not config_file:
-        # reading most recent config file in the read_dir
+        # if not specified file, read the most recent config file in read_dir
         f_list = [ f for f in os.listdir(read_dir) if f.endswith('.cfg')]
+        if len(f_list) ==0:
+            print('There is no config file in %s. Please make sure you have at least created one config file' % read_dir)
+            return
         f_dummy = []
         for f in f_list:
             f_dummy.append(os.path.join(read_dir,f))
@@ -855,41 +865,33 @@ def new_sample(sample_name, composition = '', experimenters=[], comments={}, ver
 
     if not experimenters:
         try:
-            experimenters = gs.RE.md['experimenters']
-        except KeyError:
+            experimenters = set_value('experimenters')['experimenters']
+        except TypeError:
             experimenters = ''
         print('Current experimenters is/are %s' % experimenters)
-        #print('To change experimenters, rerun new_user() with desired experimenter list as the argument')
     else:
         new_exp = experimenters
-        gs.RE.md['experimenters'] = new_exp
+        set_value('experimenters')['experimenters'] = new_exp
         print('Experimenters field has been updated as %s' % experimenters)
-        #print('To update experimenters solely, rerun new_user() with desired experimenter list as the argument')
 
     if not composition:
         try:
-            composition = gs.RE.md['sample']['composition']
-        except KeyError:
+            composition = set_value('composition')['composition']
+        except TypeError:
             composition = []
         print('Current sample composition is %s' % composition)
-        #print('To change composition, rerun new_sample() with composition passed as an argument')
     else:
-        gs.RE.md['sample']['composition'] = composition
+        set_value('composition')['composition']= composition
         print('Current sample composition is %s' % composition)
-        #print('To change composition, rerun new_sample() with composition passed as an argument')
     print('To change experimenters or sample, rerun new_user() or new_sample() respectively, with desired experimenter list as the argument')   
-    #time_form = str(datetime.datetime.fromtimestamp(time.time()))
-    #date = time_form[:10]
-    #hour = time_form[11:16]
-    #timestampstring = '_'.join([date, hour]) #fixme, get timestamp from central clock through bluesky
     time_stub = _timestampstr(time.time())
     try:
         gs.RE.md['sample']
     except KeyError:
-        gs.RE.md['sampl'] = {}
+        gs.RE.md['sample'] = {}
 
-    gs.RE.md['sample']['sample_load_time'] = time_stub
-    gs.RE.md['sample']['comments'] = comments
+    set_value('sample_load_time')['sample_load_time'] = time_stub
+    set_value('comments')['comments'] = comments
     if verbose: print('sample_load_time has been recorded: %s' % time_stub)
     if verbose: print('Sample and experimenter metadata have been set')
     if verbose: print('To check what will be saved with your scans, type "gs.RE.md"')
@@ -906,7 +908,6 @@ def get_keys(fuzzy_key, d=gs.RE.md, verbose=0):
     if hasattr(d,'items'):
         rv = [f for f in d.keys() if f.startswith(fuzzy_key)]
         if not verbose: print('Possible key(s) to your search is %s' % rv)
-        #print('Please identify your desired result and use build_keychain_list() function to generate complete keychian map to nested metadata dictionary')
         return rv
         get_keys(fuzzy_key, d.values())
 
@@ -921,10 +922,33 @@ def get_keychain(wanted_key, d = gs.RE.md):
         if isinstance(v, dict):
             result = get_keychain(wanted_key, v) # dig in nested element
             if result:
-                return [k]+p
+                return [k]+ result
         elif k == wanted_key:
             return [k]
-
+def set_value(key, d = gs.RE.md):
+    ''' Return the last parent dictionary of key. It is convenient to set metadata value
+    
+    arguments:
+    key - str - name of key you want to search for
+    d - dict - dictionary you want to search for. Default is set to current metadata dictionary
+    '''
+    keychain = get_keychain(key)
+    try:
+        key_pop = keychain.pop()
+    except AttributeError:
+        print('You do not have %s in current metadata dictionary' % key)
+        return
+    # safety check
+    if key_pop == key: pass
+    else: return
+    d0 = {} # used to store information
+    p_dict = d
+    for k, v in d.items():
+        d0[k]=v
+    while keychain:
+        p_dict = d0.get(keychain.pop())
+        d0 = p_dict
+    return p_dict
 
 def build_keychain_list(key_list, d = gs.RE.md, verbose = 1):
     ''' Return a keychain list that yields all parent keys for every key in key_list
@@ -997,208 +1021,6 @@ def search(desired_value, *args, **kwargs):
             dummy_search_dict = {}
             dummy_search_dict[keychain_list[i]] = desired_value
             dummy_search_dict['group'] = 'XPD' # create an anchor as mongoDB and_search needs at least 2 key-value pairs
-            search_header = db(**dummy_search_dict)
-            search_header_list.append(search_header)
-            print('Your %ith search  "%s = %s"  yields  %i  headers' % (i, keychain_list[i], desired_value, len(search_header)))
-        print('Identify desired search(es) and obtain header(s) by indexing over your search result')
-        return search_header_list # might be less useful for users as only one condition is given
-
-    elif not desired_value and kwargs:
-        if len(kwargs)>1:
-            search_header = db(**kwargs)
-        elif len(kwargs) ==1:
-            kwargs['group']='XPD'
-            search_header = db(**kwargs)
-        else:
-            print('You are giving in an empty searching criteria. Please try again')
-            return
-        return search_header
-
-    else:
-        print('Sorry, you searching criteria is somehow unrecognizable. Please make sure you are putting values to right fields')
-
-def table_gen(headers):
-    ''' Takes in a header list generated by search functions and return a table
-    with metadata information
-
-    Argument:
-    headers - list - a list of bluesky header objects
-
-    '''
-    plt_list = list()
-    feature_list = list()
-    comment_list = list()
-    uid_list = list()
-
-    if type(list(headers)[1]) == str:
-        header_list = []
-        header_list.append(headers)
-    else:
-        header_list = headers
-
-    for header in header_list:
-        try:
-            time_stub = _timestampstr(header.start.time)
-        except AttributeError:
-            time_stub = 'N/A'
-        #feature = _feature_gen(header)
-        #header_uid = header.start.uid[:5]
-        #uid_list.append(header_uid)
-        #f_name = "_".join([time_stub, feature])
-        f_name =_filename_gen(header)
-        feature_list.append(f_name)
-
-        try:
-            comment_list.append(header.start['comments'])
-        except KeyError:
-            comment_list.append('None')
-        try:
-            uid_list.append(header.start['uid'][:5])
-        except KeyError:
-            # jsut in case, it should never happen
-            print('Some of your data do not even have a uid, it is very dangerous, please contact beamline scientist immediately')
-    plt_list = [feature_list, comment_list, uid_list] # u_id for ultimate search
-    tab = pd.DataFrame(plt_list)
-    inter_tab = tab.transpose()
-    inter_tab.columns=['Features', 'Comments', 'u_id_list']
-
-    return inter_tab
-
-
-def time_search(startTime,stopTime=False,exp_day1=False,exp_day2=False):
-    '''return list of experiments run in the interval startTime to stopTime
-
-    this function will return a set of events from dataBroker that happened
-    between startTime and stopTime on exp_day
-
-    arguments:
-    startTime - datetime time object or string or integer - time a the beginning of the
-                period that you want to pull data from.  The format could be an integer
-                between 0 and 24 to set it at a  whole hour, or a datetime object to do
-                it more precisely, e.g., datetime.datetime(13,17,53) for 53 seconds after
-                1:17 pm, or a string in the time form, e.g., '13:17:53' in the example above
-    stopTime -  datetime object or string or integer - as starTime but the latest time
-                that you want to pull data from
-    exp_day - str or datetime.date object - the day of the experiment.
-    '''
-    # date part
-    if exp_day1:
-        if exp_day2:
-            d0 = exp_day1
-            d1 = exp_day2
-        else:
-            d0 = exp_day1
-            d1 = d0
-    else:
-        d0 = str(datetime.datetime.today().date())
-        d1 = d0
-
-    # time part
-    if stopTime:
-
-        t0 = datetime.time(startTime)
-        t1 = datetime.time(stopTime)
-
-    else:
-        now = datetime.datetime.now()
-        hr = now.hour
-        minu = now.minute
-        sec = now.second
-        stopTime = datetime.time(hr,minu,sec) # if stopTime is not specified, set current time as stopTime
-
-        t0 = datetime.time(startTime)
-        t1 = stopTime
-
-    timeHead = str(d0)+" "+str(t0)
-    timeTail = str(d1)+" "+str(t1)
-
-    header_time=db(start_time=timeHead,stop_time=timeTail)
-
-
-    print('||You assign a time search in the period:\n'+str(timeHead)+' and '+str(timeTail)+'||' )
-    print('||Your search gives out '+str(len(header_time))+' results||')
-
-    return header_time
-
-
-def sanity_check():
-    user = gs.RE.md['experimenters']
-    print('Current experimenter(s) are: %s' % user)
-    sample_name = gs.RE.md['sample_name']
-    try:
-        compo = gs.RE.md['sample']['composition']
-        print('Current sample_name is %s, composition is %s' % (sample_name, compo))
-        calib_file = gs.RE.md['calibration_scan_info']['calibration_information']['from_calibration_file']
-    except KeyError:
-        print('Current sample_name is %s, composition is %s' % (sample_name,''))
-    try:
-        calib_file = gs.RE.md['calibration_scan_info']['calibration_information']['from_calibration_file']
-        print('Current calibration file being used is %s' % calib_file)
-    except KeyError:
-        pass
-    scan_info()
-
-def print_dict(d, ident = '', braces=1):
-    ''' Recursively print nested dictionary, give a easy to read form
-
-    argument:
-        d - dict - nested dictionary you want to print
-    '''
-
-    for key, value in d.items():
-        if isinstance(value, dict):
-            print ('%s%s%s%s' %(ident,braces*'[', key , braces*']'))
-            print_dict(value, ident+'  ', braces+1)
-        else:
-            print (ident+'%s = %s' %(key, value))
-
-
-''' Don't use it, it is slow and potentially dangerous to local work stations
-when saving a lot of tif files.
-def prompt_save(name,doc):
-    if name == 'stop':
-        header = db[doc['uid']] # fixme: how to do doc.uid ????
-        #dummy = ''
-        #dummy_key_list = [f for f in header.start.keys() if f in feature_list] # stroe it independently
-
-        #for key in dummy_key_list:
-        #    dummy += str(header.start[key])+'_'
-
-        #feature = dummy[:-1]
-        feature = _feature_gen(header)
-
-        # prepare timestamp, uid
-        time_stub = _timestampstr(header.stop.time)
-        uid = header.stop.uid[:5]
-        imgs = get_images(header,'pe1_image_lightfield')
-
-        for i in range(imgs.shape[0]):
-            f_name = '_'.join([time_stub, uid, feature,'00'+str(i)+'.tif'])
-            w_name = os.path.join(backup_dir,f_name)
-            img = imgs[i]
-            imsave(w_name, img) # overwrite mode !!!!
-            if os.path.isfile(w_name):
-                print('%s has been saved at %s' % (f_name, backup_dir))
-            else:
-                print('Sorry, something went wrong with your tif saving')
-                return
-'''
-def _timestampstr(timestamp):
-    time= str(datetime.datetime.fromtimestamp(timestamp))
-    date = time[:10]
-    hour = time[11:16]
-    timestampstring = '_'.join([date, hour])
-    return timestampstring
-
-def _clean_metadata():
-    '''
-    reserve for completely cleaning metadata dictionary
-    return nothing
-    '''
-    extra_key_list = [ f for f in gs.RE.md.keys() if f not in default_keys]
-    for key in extra_key_list:
-        del(gs.RE.md[key])
-    gs.RE.md['sample'] = {}
 
 
 # Holding place
