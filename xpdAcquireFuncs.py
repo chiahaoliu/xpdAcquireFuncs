@@ -61,7 +61,7 @@ def _feature_gen(header):
             dummy_list.append(''.join(dummy))  # feature list elements is at the first level, as it should be
         except KeyError:
             pass
-        
+
     inter_list = []
     for el in dummy_list:
         if isinstance(el, list): # if element is a list
@@ -93,7 +93,7 @@ def _MD_template():
 
     gs.RE.md['sample'] = {}
     gs.RE.md['sample']['composition'] = {}
-    
+
     gs.RE.md['dark_scan_info'] = {}
     gs.RE.md['scan_info'] = {}
 
@@ -274,7 +274,7 @@ def save_tif(headers, tif_name = False, sum_frames = True, dark_uid=False, temp_
             correct_imgs.append(light_imgs[i]-np.sum(dark_img_list[dark_len-dark_num:dark_len],0)) # use last d_num dark images
 
 
-       # header_filename =_filename_gen(header)    
+       # header_filename =_filename_gen(header)
         if sum_frames:
             if not tif_name:
                 header_uid = header.start.uid[:5]
@@ -368,7 +368,7 @@ def save_tif(headers, tif_name = False, sum_frames = True, dark_uid=False, temp_
             return
 
         w_name =None
-        ''' 
+        '''
         write_config(config_dict, w_config_name)
         if os.path.isfile(w_config_name):
             print('%s has been saved at %s' % (config_f_name, W_DIR))
@@ -595,7 +595,7 @@ def get_count_scan(scan_time=1.0, scan_exposure_time=0.5, scan_def=False,
             gs.RE.md['user_supplied'][key] = value
     # test if parent layers exitst
     try:
-        gs.RE.md['scan_info'] 
+        gs.RE.md['scan_info']
         gs.RE.md['sample']
         pass
     except KeyError:
@@ -640,14 +640,14 @@ def get_count_scan(scan_time=1.0, scan_exposure_time=0.5, scan_def=False,
         scan = bluesky.scans.Count([pe1],num)
     else:
         scan = scan_def
-    
+
 
     # assign values from current scan
     scan_exposure_time_hold = copy.copy(pe1.acquire_time)
     pe1.acquisition_time = scan_exposure_time
-    
+
     gs.RE.md['scan_info']['scan_exposure_time'] = scan_exposure_time
-    gs.RE.md['scan_info']['number_of_exposures'] = num 
+    gs.RE.md['scan_info']['number_of_exposures'] = num
     gs.RE.md['scan_info']['total_scan_duration'] = num*scan_exposure_time
     gs.RE.md['scan_info']['scan_type'] = 'count_scan'
     gs.RE.md['sample']['temp'] = str(cs700.value[1])+'k'
@@ -667,7 +667,7 @@ def get_count_scan(scan_time=1.0, scan_exposure_time=0.5, scan_def=False,
         gs.RE.md['user_supplied'] = {}
         gs.RE.md['sample']['temperature'] = temp_hold
     except:
-        # deconstruct the metadata        
+        # deconstruct the metadata
         gs.RE.md['scan_info'] ={'scan_exposure_time':
                 scan_exposure_time_hold,'number_of_exposures': scan_steps_hold,'total_scan_duration': total_scan_duration_hold, 'scan_type': scan_type_hold}
         gs.RE.md['user_supplied'] = {}
@@ -679,8 +679,8 @@ def get_temp_scan(start_temperature, final_temperature, t_steps=False, scan_expo
     '''function for doing a temperature series scan
 
     Arguments:
-        start_temperature - float - starting temperature 
-        final_temperature - float - final temperature 
+        start_temperature - float - starting temperature
+        final_temperature - float - final temperature
         tscan_steps - int - optional. steps of your temeprature series, default value is your round off of your temperature range.
         scan_exposure_time - float - optional. exposure time per frame, default value is 0.5 s
         comments - dictionary - optional. dictionary of user defined key:value pairs.
@@ -691,7 +691,7 @@ def get_temp_scan(start_temperature, final_temperature, t_steps=False, scan_expo
             gs.RE.md['user_supplied'][key] = value
     # test if even parents layers exitst
     try:
-        gs.RE.md['scan_info'] 
+        gs.RE.md['scan_info']
         gs.RE.md['sample']
         pass
     except KeyError:
@@ -752,7 +752,7 @@ def get_temp_scan(start_temperature, final_temperature, t_steps=False, scan_expo
                 scan_exposure_time_hold,'number_of_exposures': scan_steps_hold,'total_scan_duration': total_scan_duration_hold, 'scan_type': scan_type_hold}
         gs.RE.md['user_supplied'] = {}
     except:
-        # deconstruct the metadata        
+        # deconstruct the metadata
         gs.RE.md['scan_info'] ={'scan_exposure_time':
                 scan_exposure_time_hold,'number_of_exposures': scan_steps_hold,'total_scan_duration': total_scan_duration_hold, 'scan_type': scan_type_hold}
         gs.RE.md['user_supplied'] = {}
@@ -883,7 +883,7 @@ def new_sample(sample_name, composition = '', experimenters=[], comments={}, ver
     else:
         set_value('composition')['composition']= composition
         print('Current sample composition is %s' % composition)
-    print('To change experimenters or sample, rerun new_user() or new_sample() respectively, with desired experimenter list as the argument')   
+    print('To change experimenters or sample, rerun new_user() or new_sample() respectively, with desired experimenter list as the argument')
     time_stub = _timestampstr(time.time())
     try:
         gs.RE.md['sample']
@@ -927,7 +927,7 @@ def get_keychain(wanted_key, d = gs.RE.md):
             return [k]
 def set_value(key, d = gs.RE.md):
     ''' Return the last parent dictionary of key. It is convenient to set metadata value
-    
+
     arguments:
     key - str - name of key you want to search for
     d - dict - dictionary you want to search for. Default is set to current metadata dictionary
@@ -1040,7 +1040,201 @@ def search(desired_value, *args, **kwargs):
         print('Sorry, your search is somehow unrecongnizable. Please make sure you are putting values to right fields')
 
 
+def table_gen(headers):
+    ''' Takes in a header list generated by search functions and return a table
+    with metadata information
 
+    Argument:
+    headers - list - a list of bluesky header objects
+
+    '''
+    plt_list = list()
+    feature_list = list()
+    comment_list = list()
+    uid_list = list()
+
+    if type(list(headers)[1]) == str:
+        header_list = []
+        header_list.append(headers)
+    else:
+        header_list = headers
+
+    for header in header_list:
+        #feature = _feature_gen(header)
+        #time_stub = _timestampstr(header.stop.time)
+        #header_uid = header.start.uid
+        #uid_list.append(header_uid[:5])
+        #f_name = "_".join([time_stub, feature])
+        f_name =_filename_gen(header)
+        feature_list.append(f_name)
+
+        try:
+            comment_list.append(header.start['comments'])
+        except KeyError:
+            comment_list.append('None')
+        try:
+            uid_list.append(header.start['uid'][:5])
+        except KeyError:
+            # jsut in case, it should never happen
+            print('Some of your data do not even have a uid, it is very dangerous, please contact beamline scientist immediately')
+    plt_list = [feature_list, comment_list, uid_list] # u_id for ultimate search
+    inter_tab = pd.DataFrame(plt_list)
+    tab = inter_tab.transpose()
+    tab.columns=['Features', 'Comments', 'u_id_list']
+
+    return tab
+
+
+def time_search(startTime,stopTime=False,exp_day1=False,exp_day2=False):
+    '''return list of experiments run in the interval startTime to stopTime
+
+    this function will return a set of events from dataBroker that happened
+    between startTime and stopTime on exp_day
+
+    arguments:
+    startTime - datetime time object or string or integer - time a the beginning of the
+                period that you want to pull data from.  The format could be an integer
+                between 0 and 24 to set it at a  whole hour, or a datetime object to do
+                it more precisely, e.g., datetime.datetime(13,17,53) for 53 seconds after
+                1:17 pm, or a string in the time form, e.g., '13:17:53' in the example above
+    stopTime -  datetime object or string or integer - as starTime but the latest time
+                that you want to pull data from
+    exp_day - str or datetime.date object - the day of the experiment.
+    '''
+    # date part
+    if exp_day1:
+        if exp_day2:
+            d0 = exp_day1
+            d1 = exp_day2
+        else:
+            d0 = exp_day1
+            d1 = d0
+    else:
+        d0 = datetime.datetime.today().date()
+        d1 = d0
+
+    # time part
+    if stopTime:
+
+        t0 = datetime.time(startTime)
+        t1 = datetime.time(stopTime)
+
+    else:
+        now = datetime.datetime.now()
+        hr = now.hour
+        minu = now.minute
+        sec = now.second
+        stopTime = datetime.time(hr,minu,sec) # if stopTime is not specified, set current time as stopTime
+
+        t0 = datetime.time(startTime)
+        t1 = stopTime
+
+    timeHead = str(d0)+' '+str(t0)
+    timeTail = str(d1)+' '+str(t1)
+
+    header_time=db(start_time=timeHead,
+                   stop_time=timeTail)
+
+    event_time = get_events(header_time, fill=False)
+    event_time = list(event_time)
+
+    print('||You assign a time search in the period:\n'+str(timeHead)+' and '+str(timeTail)+'||' )
+    print('||Your search gives out '+str(len(header_time))+' results||')
+
+    return header_time
+
+
+def sanity_check():
+    user = gs.RE.md['experimenters']
+    print('Current experimenter(s) are: %s' % user)
+    sample_name = gs.RE.md['sample_name']
+    try:
+        compo = gs.RE.md['sample']['composition']
+        print('Current sample_name is %s, composition is %s' % (sample_name, compo))
+        calib_file = gs.RE.md['calibration_scan_info']['calibration_information']['from_calibration_file']
+    except KeyError:
+        print('Current sample_name is %s, composition is %s' % (sample_name,''))
+    try:
+        calib_file = gs.RE.md['calibration_scan_info']['calibration_information']['from_calibration_file']
+        print('Current calibration file being used is %s' % calib_file)
+    except KeyError:
+        pass
+    scan_info()
+
+def print_dict(d, ident = '', braces=1):
+    ''' Recursively print nested dictionary, give a easy to read form
+
+    argument:
+        d - dict - nested dictionary you want to print
+    '''
+
+    for key, value in d.items():
+        if isinstance(value, dict):
+            print ('%s%s%s%s' %(ident,braces*'[', key , braces*']'))
+            print_dict(value, ident+'  ', braces+1)
+        else:
+            print (ident+'%s = %s' %(key, value))
+
+
+''' Don't use it, it is slow and potentially dangerous to local work stations
+when saving a lot of tif files.
+def prompt_save(name,doc):
+    if name == 'stop':
+        header = db[doc['uid']] # fixme: how to do doc.uid ????
+        #dummy = ''
+        #dummy_key_list = [f for f in header.start.keys() if f in feature_list] # stroe it independently
+
+        #for key in dummy_key_list:
+        #    dummy += str(header.start[key])+'_'
+
+        #feature = dummy[:-1]
+        feature = _feature_gen(header)
+
+        # prepare timestamp, uid
+        time_stub = _timestampstr(header.stop.time)
+        uid = header.stop.uid[:5]
+        imgs = get_images(header,'pe1_image_lightfield')
+
+        for i in range(imgs.shape[0]):
+            f_name = '_'.join([time_stub, uid, feature,'00'+str(i)+'.tif'])
+            w_name = os.path.join(backup_dir,f_name)
+            img = imgs[i]
+            imsave(w_name, img) # overwrite mode !!!!
+            if os.path.isfile(w_name):
+                print('%s has been saved at %s' % (f_name, backup_dir))
+            else:
+                print('Sorry, something went wrong with your tif saving')
+                return
+'''
+def _get_value(key, d=gs.RE.md):
+    ''' return any key value from current nested metadata dictionary
+
+    argument:
+    key_chain - str - name of certain key, it will be sent to get_keychain()
+    d - dict - set to be current dictionary
+    '''
+    keychain = get_keychain(key, d=gs.RE.md) # get keychain from current md
+    key_bg = keychai.pop() # get rid of the last one, which is key
+    if key_bg == key:
+        pass
+    else:
+        return
+    keychain.reverse() # reverse it as we want top-down map
+    d0 = d
+    while keychain:
+        value = d0.get(keychain.pop())
+        d0 = value
+    return value
+
+def _clean_metadata():
+    '''
+    reserve for completely cleaning metadata dictionary
+    return nothing
+    '''
+    extra_key_list = [ f for f in gs.RE.md.keys() if f not in default_keys]
+    for key in extra_key_list:
+        del(gs.RE.md[key])
+    gs.RE.md['sample'] = {}
 
 # Holding place
     #print(str(check_output(['ls', '-1t', '|', 'head', '-n', '10'], shell=True)).replace('\\n', '\n'))
