@@ -1588,6 +1588,17 @@ def get_temp(header):
         print('There is no temperature information in this header, please check if you are looking at the correct data')
         return
 
+def run_script(script_name):
+    ''' Run user script in script base
+
+    argument:
+    script_name - str - name of script user wants to run. It must be sit under script_base to avoid confusion when asking Python to run script.
+    '''
+    module = script_name
+    m_name = os.path.join('S_DIR', module)
+    %run -i $m_name
+
+
 # Holding place
     #print(str(check_output(['ls', '-1t', '|', 'head', '-n', '10'], shell=True)).replace('\\n', '\n'))
     #gs.RE.md.past({'field':'value'})
