@@ -937,7 +937,7 @@ def set_value(key, d = gs.RE.md):
         key_pop = keychain.pop()
     except AttributeError:
         print('You do not have %s in current metadata dictionary' % key)
-        return
+        print('Use standard metadata template instead')
     # safety check
     if key_pop == key: pass
     else: return
