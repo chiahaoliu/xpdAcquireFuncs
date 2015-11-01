@@ -28,7 +28,7 @@ from configparser import ConfigParser
 
 import localimports
 
-#pd.set_option('max_colwidth',70)
+pd.set_option('max_colwidth',50)
 pd.set_option('colheader_justify','left')
 
 default_keys = ['owner', 'beamline_id', 'group', 'config', 'scan_id'] # required by dataBroker
@@ -578,16 +578,13 @@ def get_calibration_images (calibrant, wavelength, calibration_scan_exposure_tim
     if os.path.isfile(w_name):
         print('A summed image %s has been saved to %s' % (f_name, W_DIR))
     '''
-def get_count_scan(scan_time=1.0, scan_exposure_time=0.5, scan_def=False,
-        comments={}):
+def get_count_scan(scan_time=1.0, scan_exposure_time=0.5, comments={}):
     '''function for getting a light image
 
     Arguments:
         scan_time - float - optional. data collection time for the scan. default = 1.0 seconds
         scan_exposure_time - float - optional. exposure time per frame. number of exposures will be
             set to int(scan_time/exposure_time) (round off)
-        scan_def - bluesky scan object - optional. user can specify their own scan and pass it
-            to the function.  Not specified in normal usage.
         comments - dictionary - optional. dictionary of user defined key:value pairs.
         scan_mode - int - mode of your scan. if scan_mode = 0, this function
         will do count scan and if scan_mode = 1, this function will do a
@@ -631,9 +628,9 @@ def get_count_scan(scan_time=1.0, scan_exposure_time=0.5, scan_def=False,
     # don't expose the PE for more than 5 seconds max, set it to 1 seconds if you go beyond limit
     if scan_exposure_time > 5.0:
         print('Your exposure time is larger than 5 seconds. This can damage detector')
-        print('Exposure time is set to 2 seconds')
+        print('Exposure time is set to 4 seconds')
         print('Number of exposures will be recalculated so that scan time is the same....')
-        scan_exposure_time = 2.0
+        scan_exposure_time = 4.0
         num = int(scan_time/scan_exposure_time)
         print('Number of exposures is now %s' % num)
     else:
@@ -646,19 +643,17 @@ def get_count_scan(scan_time=1.0, scan_exposure_time=0.5, scan_def=False,
     else:
         scan = scan_def
 
-
-    # assign values from current scan
-    scan_exposure_time_hold = copy.copy(pe1.acquire_time)
-    pe1.acquisition_time = scan_exposure_time
-
-    gs.RE.md['scan_info']['scan_exposure_time'] = scan_exposure_time
-    gs.RE.md['scan_info']['number_of_exposures'] = num
-    gs.RE.md['scan_info']['total_scan_duration'] = num*scan_exposure_time
-    gs.RE.md['scan_info']['scan_type'] = 'count_scan'
-    gs.RE.md['sample']['temp'] = str(cs700.value[1])+'k'
-    #gs.RE.md['scan_info']['detector'] = pe1  # pe1 is not a simple object, call it directly causes I/O Error
-
     try:
+        # assign values from current scan
+        scan_exposure_time_hold = copy.copy(pe1.acquire_time)
+        pe1.acquisition_time = scan_exposure_time
+
+        gs.RE.md['scan_info']['scan_exposure_time'] = scan_exposure_time
+        gs.RE.md['scan_info']['number_of_exposures'] = num
+        gs.RE.md['scan_info']['total_scan_duration'] = num*scan_exposure_time
+        gs.RE.md['scan_info']['scan_type'] = 'count_scan'
+        gs.RE.md['sample']['temp'] = str(cs700.value[1])+'k'
+
         # fixme: code to check the filter/shutter is open
         scan.subs = LiveTable(['pe1_image_lightfield'])
         gs.RE(scan)
@@ -680,20 +675,20 @@ def get_count_scan(scan_time=1.0, scan_exposure_time=0.5, scan_def=False,
         print('image collection failed. Check why gs.RE(scan) is not working and rerun')
         return
 
-def get_temp_scan(start_temperature, final_temperature, t_steps=False, scan_exposure_time=0.5, comments={}):
-    '''function for doing a temperature series scan
+def get_temp_scan(start_temperature, final_temperature, temperature_step, scan_exposure_time=0.5, comments={}):
+    '''Running a temperature delta scan and save dark-corrected file
 
     Arguments:
         start_temperature - float - starting temperature
         final_temperature - float - final temperature
-        tscan_steps - int - optional. steps of your temeprature series, default value is your round off of your temperature range.
+        temperature_step - int - step size of your temeprature scan.
         scan_exposure_time - float - optional. exposure time per frame, default value is 0.5 s
         comments - dictionary - optional. dictionary of user defined key:value pairs.
     '''
     if comments:
         extra_key = comments.keys()
         for key, value in comments.items():
-            gs.RE.md['user_supplied'][key] = value
+            gs.RE.md['user_supply'][key] = value
     # test if even parents layers exitst
     try:
         gs.RE.md['scan_info']
@@ -719,39 +714,33 @@ def get_temp_scan(start_temperature, final_temperature, t_steps=False, scan_expo
     # don't expose the PE for more than 5 seconds max, set it to 1 seconds if you go beyond limit
     if scan_exposure_time > 5.0:
         print('Your exposure time is larger than 5 seconds. This can damage detector')
-        print('Exposure time is set to 2 seconds')
-        scan_exposure_time = 2.0
-
-    if not t_steps:
-        scan_steps = int(final_temperature - start_temperature)
-    else:
-        scan_steps = t_steps
-    if scan_steps == 0: scan_steps==1 # at least one scan
-
-    # assign values from current scan
-    scan_cnt_time_hold = copy.copy(pe1.acquire_time)
-    pe1.acquisition_time = scan_exposure_time
-    gs.RE.md['scan_info']['scan_exposure_time'] = scan_exposure_time
-    gs.RE.md['scan_info']['number_of_exposures'] = scan_steps
-    gs.RE.md['scan_info']['total_scan_duration'] = scan_steps*scan_exposure_time
-    gs.RE.md['scan_info']['scan_type'] = 'temp_scan'
-    #gs.RE.md['scan_info']['detector'] = pe1  # pe1 is not a simple object, call it directly causes I/O Error
+        print('Exposure time is set to 4 seconds')
+        scan_exposure_time = 4.0
+    if temperature_step == 0: temperature_step==1 # at least one scan
+    scan_steps = int((final_temperature - start_temperature)/temperature_step)
 
     try:
+        # assign values from current scan
+        scan_cnt_time_hold = copy.copy(pe1.acquire_time)
+        pe1.acquisition_time = scan_exposure_time
+        gs.RE.md['scan_info']['scan_exposure_time'] = scan_exposure_time
+        gs.RE.md['scan_info']['number_of_exposures'] = scan_steps
+        gs.RE.md['scan_info']['total_scan_duration'] = scan_steps*scan_exposure_time
+        gs.RE.md['scan_info']['scan_type'] = 'temp_scan'
+
         # fixme: code to check the filter/shutter is open
-        tscan = bluesky.scans.AbsScan(cs700, [pe1], start_temperature, final_temperature, scan_steps)
+        #tscan = bluesky.scans.DeltaScan(cs700, [pe1], start_temperature, final_temperature, scan_steps)
+        tscan = bluesky.scans.DeltaScan( [pe1], cs700, start_temperature, final_temperature, scan_steps)
         tscan.subs = LiveTable(['pe1_image_lightfield'])
 
         gs.RE(tscan)
         header = db[-1]
         #feature = _feature_gen(header)
         filename = _filename_gen(header)
-        #temp = header.start.temperaute ????????? fixme: figure out where is this data stored in header, must be a list
-        '''pseudo code
-        #fixme: get temeprature series !!!!!!
-        save_tiff(header, sum_frames = False, temp_series=temp)
+        temps = get_temp(header)
+        save_tiff(header, sum_frames = False, temp_series=temps)
         # note, do not close the shutter again afterwards, we will do it manually outside of this function
-	    '''
+
         # deconstruct the metadata
         gs.RE.md['scan_info'] ={'scan_exposure_time':
                 scan_exposure_time_hold,'number_of_exposures': scan_steps_hold,'total_scan_duration': total_scan_duration_hold, 'scan_type': scan_type_hold}
@@ -763,6 +752,111 @@ def get_temp_scan(start_temperature, final_temperature, t_steps=False, scan_expo
         gs.RE.md['user_supplied'] = {}
         print('image collection failed. Check why gs.RE(scan) is not working and rerun')
         return
+
+def get_temp_scan_test(t0, tf, t_space):
+    '''default value:
+        scan_time = 1.0, scan_exposure_time = 0.5, commments={}
+    '''
+    tscan = bluesky.scan.DeltaScan([pe1], cs700, t0, tf, tspace)
+    scan_type = 'temp_scan'
+    get_mys_scan(tscan, scan_type)
+
+
+def get_my_scan(scan_def, scan_type, scan_time=1.0, scan_exposure_time=0.5, comments={}):
+    '''function for getting a light image
+
+    Arguments:
+        scan_def - bluesky scan object - user defined scan and pass it. 
+            Please refer to http://nsls-ii.github.io/bluesky/scans.html for syntax and further information.
+        scan_type - str - scan type of user defined scan
+        scan_time - float - optional. data collection time for the scan. default = 1.0 seconds
+        scan_exposure_time - float - optional. exposure time per frame. number of exposures will be
+            set to int(scan_time/exposure_time) (round off)
+        comments - dictionary - optional. dictionary of user defined key:value pairs.
+    '''
+
+    if comments:
+        extra_key = comments.keys()
+        for key, value in comments.items():
+            gs.RE.md['user_supplied'][key] = value
+    # test if parent layers exitst
+    try:
+        gs.RE.md['scan_info']
+        gs.RE.md['sample']
+        pass
+    except KeyError:
+        gs.RE.md['scan_info']={}
+        gs.RE.md['sample'] = {}
+    # Prpare hold values, KeyError means blanck state, just pass it
+    try:
+        scan_type_hold = copy.copy(gs.RE.md['scan_info']['scan_type'])
+    except KeyError:
+        scan_type_hold =''
+        pass
+    try:
+        scan_steps_hold = gs.RE.md['scan_info']['number_of_exposures']
+    except KeyError:
+        scan_steps_hold =''
+        pass
+    try:
+        total_scan_duration_hold = gs.RE.md['scan_info']['total_scan_duration']
+    except KeyError:
+        total_scan_duration_hold =''
+        pass
+    try:
+        temp_hold = gs.RE.md['sample']['temperature']  # fixme: temporarily use
+    except:
+        temp_hold =''
+        pass
+
+    # don't expose the PE for more than 5 seconds max, set it to 1 seconds if you go beyond limit
+    if scan_exposure_time > 5.0:
+        print('Your exposure time is larger than 5 seconds. This can damage detector')
+        print('Exposure time is set to 4 seconds')
+        print('Number of exposures will be recalculated so that scan time is the same....')
+        scan_exposure_time = 4.0
+        num = int(scan_time/scan_exposure_time)
+        print('Number of exposures is now %s' % num)
+    else:
+        num = int(scan_time/scan_exposure_time)
+
+    if num == 0: num = 1 # at least one scan
+
+
+    #gs.RE.md['scan_info']['detector'] = pe1  # pe1 is not a simple object, call it directly causes I/O Error
+
+    try:
+        # fixme: code to check the filter/shutter is open
+        # assign values from current scan
+        scan_exposure_time_hold = copy.copy(pe1.acquire_time)
+        pe1.acquisition_time = scan_exposure_time
+
+        gs.RE.md['scan_info']['scan_exposure_time'] = scan_exposure_time
+        gs.RE.md['scan_info']['number_of_exposures'] = num
+        gs.RE.md['scan_info']['total_scan_duration'] = num*scan_exposure_time
+        gs.RE.md['scan_info']['scan_type'] = scan_type
+        gs.RE.md['sample']['temp'] = str(cs700.value[1])+'k'
+        scan = scan_def
+        scan.subs = LiveTable(['pe1_image_lightfield'])
+        gs.RE(scan)
+        header = db[-1]
+        #feature = _feature_gen(header)
+        filename = _filename_gen(header)
+        save_tif(header, sum_frames=True)
+        #deconstruct the metadata
+        gs.RE.md['scan_info'] ={'scan_exposure_time':
+                scan_exposure_time_hold,'number_of_exposures': scan_steps_hold, 'total_scan_duration':total_scan_duration_hold, 'scan_type': scan_type_hold}
+        gs.RE.md['user_supplied'] = {}
+        gs.RE.md['sample']['temperature'] = temp_hold
+    except:
+        # deconstruct the metadata
+        gs.RE.md['scan_info'] ={'scan_exposure_time':
+                scan_exposure_time_hold,'number_of_exposures': scan_steps_hold,'total_scan_duration': total_scan_duration_hold, 'scan_type': scan_type_hold}
+        gs.RE.md['user_supplied'] = {}
+        gs.RE.md['sample']['temperature'] = temp_hold
+        print('image collection failed. Check why gs.RE(scan) is not working and rerun')
+        return
+
 
 def load_calibration(config_file = False, config_dir = False):
     '''Function loads calibration values as metadata to save with scans
@@ -805,7 +899,7 @@ def load_calibration(config_file = False, config_dir = False):
         if len(f_sort) >0:
             print('Using %s, the most recent config file that was found' % config_file_stub)
         else:
-            print('There is no ".cfg" file in '+ read_dir)
+            print('There is no .cfg file in '+ read_dir)
             print('make sure the config file has been written in that directory and has extension ".cfg"')
             return
     else:
@@ -815,7 +909,7 @@ def load_calibration(config_file = False, config_dir = False):
             f_time = _timestampstr(os.path.getmtime(f_name)) # time of config file
             print('Using user-supplied config file: %s located at %s' % (config_file, read_dir))
         else:
-            print('Your config file %s is not found at %s Please check again your directory and filename' % (config_file, read_dir))
+            print('Your config file "%s" is not found at "%s" Please check again your directory and filename' % (config_file, read_dir))
             return
 
     # read config file into a dirctionary
@@ -873,24 +967,24 @@ def new_sample(sample_name, composition, experimenters=[], comments={}, verbose 
     if not experimenters:
         try:
             experimenters = set_value('experimenters')['experimenters']
-        except TypeError:
+        except KeyError:
             experimenters = ''
-        print('Current experimenters is/are %s' % experimenters)
+        print('Current experimenters is/are "%s"' % experimenters)
     else:
         new_exp = experimenters
         set_value('experimenters')['experimenters'] = new_exp
-        print('"Experimenters" has been updated as %s' % experimenters)
+        print('"Experimenters" has been updated as "%s"' % experimenters)
 
     if not comments:
         try:
             comments = set_value('comments')['comments']
-        except TypeError:
+        except KeyError:
             comments = ''
-        print('Current comments to this experiment is %s' % comments)
+        print('Current comments to this experiment is "%s"' % comments)
     else:
         new_comments = comments
         set_value('comments')['comments'] = comments
-        print('"Comments" has been updated as %s' % comments)
+        print('"Comments" has been updated as "%s"' % comments)
 #    if not composition:
 #        if not set_value('composition')['composition']
 #        except TypeError:
@@ -907,15 +1001,14 @@ def new_sample(sample_name, composition, experimenters=[], comments={}, verbose 
     gs.RE.md['sample_name'] = sample_name
     print('Current sample name is %s' % sample_name)
     gs.RE.md['sample']['composition'] = composition
-    print('Current sample composition is %s' % composition)
-    print('To update metadata dictionary, re-run new_sample() or new_user(), with desired information as the argument')
+    print('Current sample composition is "%s"' % composition)
     time_stub = _timestampstr(time.time())
     if set_value('sample_load_time'):
         set_value('sample_load_time')['sample_load_time'] = time_stub
     else:
         gs.RE.md['sample']['sample_hold_time'] = time_stub   
-
     if verbose: print('sample_load_time has been recorded: %s' % time_stub)
+    print('To update metadata dictionary, re-run new_sample() or new_user(), with desired information as the argument')
    # if verbose: print('Sample and experimenter metadata have been set')
     if verbose: print('To check what will be saved with your scans, type "gs.RE.md"')
 
@@ -958,12 +1051,13 @@ def set_value(key, d = gs.RE.md):
     keychain = get_keychain(key)
     try:
         key_pop = keychain.pop()
+        # safety check
+        if key_pop == key: pass
+        else: return
     except AttributeError:
         print('You do not have %s in current metadata dictionary' % key)
-        print('Use standard metadata template instead')
-    # safety check
-    if key_pop == key: pass
-    else: return
+        print('Will setup in standard filed')
+
     d0 = {} # used to store information
     p_dict = d
     for k, v in d.items():
@@ -1100,10 +1194,10 @@ def table_gen(headers):
         except KeyError:
             # jsut in case, it should never happen
             print('Some of your data do not even have a uid, it is very dangerous, please contact beamline scientist immediately')
-    plt_list = [feature_list, comment_list, uid_list] # u_id for ultimate search
+    plt_list = [feature_list, comment_list] # u_id for ultimate search
     inter_tab = pd.DataFrame(plt_list)
     tab = inter_tab.transpose()
-    tab.columns=['Features', 'Comments', 'u_id_list']
+    tab.columns=['Features', 'Comments' ]
 
     return tab
 
@@ -1329,7 +1423,7 @@ def save_tif_test(headers, tif_name = False, sum_frames = True, dark_uid=False, 
                 dark_header = db[str(LAST_DARK_UID)]
             except NameError:
                 uid_list = [] # get uid from dark_base
-		f_d = [ f for f in os.listdir(D_DIR) ]
+            f_d = [ f for f in os.listdir(D_DIR) ]
             for f in f_d:
                 uid_list.append(f[:5])
             uid_unique = np.unique(uid_list)
@@ -1485,9 +1579,9 @@ def get_temp(header):
         print('Maybe some points are missing or unable to pull out from filestore. Please ask beamlinescientist what to do')
         return
     try:
-        temp_series = list[]
+        temp_series = list()
         for event in events:
-            temp = event]'data']['cs700']
+            temp = event['data']['cs700']
             temp_series.append(temp)
         return temp_series
     except KeyError:
