@@ -1055,14 +1055,16 @@ def set_value(key, d = gs.RE.md):
     keychain = get_keychain(key)
     try:
         key_pop = keychain.pop()
-        # safety check
-        if key_pop == key: pass
-        else: return
     except AttributeError:
-        print('You do not have %s in current metadata dictionary' % key)
-        print('Will setup in standard filed')
+        print('You do not have %s in metadata dictionary contained in this header' % key)
+        return
+        #print('Will setup in standard filed')
 
-    d0 = {} # used to store information
+    # safety check
+    if key_pop == key: pass
+    else: return
+
+    d0 = {} # store information
     p_dict = d
     for k, v in d.items():
         d0[k]=v
@@ -1268,11 +1270,25 @@ def time_search(startTime,stopTime=False,exp_day1=False,exp_day2=False):
 def sanity_check():
     user = gs.RE.md['experimenters']
     print('Current experimenter(s) are: %s' % user)
-    sample_name = gs.RE.md['sample_name']
+    if set_value('sample_name'):
+        sample_name = set_value('sample_name')['sample_name']
+    else:
+        sample_name =''
+    if set_value('composition'):
+        compo = set_value('composition')['composition']
+    else:
+        compo =[]
+    print('Current sample_name is %s, composition is %s' % (sample_name, compo))
+
+    if set_value('from_calibration_file'):
+        calib_file = set_value('from_calibration_file')['from_calibration_file']
+    else:
+        calib_file =''
+    print('Calibration file being used is %s' % calib_file)
+'''   
     try:
         compo = gs.RE.md['sample']['composition']
         print('Current sample_name is %s, composition is %s' % (sample_name, compo))
-        calib_file = gs.RE.md['calibration_scan_info']['calibration_information']['from_calibration_file']
     except KeyError:
         print('Current sample_name is %s, composition is %s' % (sample_name,''))
     try:
@@ -1280,6 +1296,7 @@ def sanity_check():
         print('Current calibration file being used is %s' % calib_file)
     except KeyError:
         pass
+'''
     scan_info()
 
 def print_dict(d, ident = '', braces=1):
@@ -1327,25 +1344,6 @@ def prompt_save(name,doc):
                 print('Sorry, something went wrong with your tif saving')
                 return
 '''
-def _get_value(key, d=gs.RE.md):
-    ''' return any key value from current nested metadata dictionary
-
-    argument:
-    key_chain - str - name of certain key, it will be sent to get_keychain()
-    d - dict - set to be current dictionary
-    '''
-    keychain = get_keychain(key, d=gs.RE.md) # get keychain from current md
-    key_bg = keychai.pop() # get rid of the last one, which is key
-    if key_bg == key:
-        pass
-    else:
-        return
-    keychain.reverse() # reverse it as we want top-down map
-    d0 = d
-    while keychain:
-        value = d0.get(keychain.pop())
-        d0 = value
-    return value
 
 def _clean_metadata():
     '''
@@ -1398,13 +1396,14 @@ def save_tif_test(headers, tif_name = False, sum_frames = True, dark_uid=False, 
             print('Was area detector correctly mounted then?')
             print('Stop saving')
             return
+        header_events = list(get_events(header))
         if set_value('scan_exposure_time', d=header.start):
             cnt_time = set_value('scan_exposure_time', d = header.start)['scan_exposure_time']
             #cnt_time = header.start.scan_info['scan_exposure_time']
         else:
-            print('scan exposure time in your header can not be found, use default 0.5 secs for dark image correction.')
-            print('Dont worry, a slightly off correction will not significantly degrade quality of your data') # fixme: comfort user??
-            cnt_time = 0.5
+            cnt_time = header_events[0]['data']['pe1_acquire_time']
+            #print('scan exposure time in your header can not be found, use default 0.5 secs for dark image correction.')
+            #print('Dont worry, a slightly off correction will not significantly degrade quality of your data') # fixme: comfort user??
 
         # Identify the latest dark stack
         '''dummy = [ f for f in os.listdir(D_DIR) ]
@@ -1425,6 +1424,10 @@ def save_tif_test(headers, tif_name = False, sum_frames = True, dark_uid=False, 
             except NameError:
                 uid_list = [] # get uid from dark_base
             f_d = [ f for f in os.listdir(D_DIR) ]
+            if not f_d:
+                print('You do not have any dark image in dark_base, please at least do one dark scan before all scans')
+            else:
+                pass
             for f in f_d:
                 uid_list.append(f[:5])
             uid_unique = np.unique(uid_list)
@@ -1439,13 +1442,15 @@ def save_tif_test(headers, tif_name = False, sum_frames = True, dark_uid=False, 
         else:
             dark_header = db[str(dark_uid)]
 
-        print('use uid = %s dark image scan' % dark_header.start.uid)
+        print('Use dark images of uid = %s' % dark_header.start.uid)
         if set_value('dark_exposure_time', dark_header.start):
             dark_cnt_time = set_value('dark_exposure_time', dark_header.start)['dark_exposure_time']
-        except KeyError:
-            print('Could not find dark_exposure_time in header with uid= %s; using default 0.5 seconds now...' % dark_header.start.uid)
-            print('Dont worry, a slightly off correction will not significantly degrade quality of your data')
-            dark_cnt_time = 0.5 # default value
+        else:
+            dark_events = list(get_events(dark_header))
+            dark_cnt_time = dark_events[0]['data']['pe1_acquire_time']
+            #print('Could not find dark_exposure_time in header with uid= %s; using default 0.5 seconds now...' % dark_header.start.uid)
+            #print('Dont worry, a slightly off correction will not significantly degrade quality of your data')
+            #dark_cnt_time = 0.5 # default value
 
         # dark correction
         dark_num = int(np.round(cnt_time / dark_cnt_time)) # how many dark frames needed for single light image
@@ -1472,17 +1477,18 @@ def save_tif_test(headers, tif_name = False, sum_frames = True, dark_uid=False, 
             plt.show()
             imsave(w_name, img) # overwrite mode now !!!!
             if os.path.isfile(w_name):
-                print('dark corrected %s has been saved at %s' % (f_name, W_DIR))
+                print('dark corrected image "%s" has been saved at "%s"' % (f_name, W_DIR))
             else:
                 print('Sorry, something went wrong with your tif saving')
                 return
 
-        else: # not in summing mode but have to tell if we are in saving temperature series
-            if not temp_series:
-                for i in range(light_imgs.shape[0]):
+        else: # not in summing mode but have to tell if we are dealing with motor series
+            if not motor_series:
+                events = list(get_events(header))
+                for i in range(len(events)):
                     if not tif_name:
                         header_uid = header.start.uid[:5]
-                        time_stub = _timestampstr(header.stop.time)
+                        time_stub = _timestampstr(events[i]['timestamps']['pe1_image_lightfield'])
                         feature = _feature_gen(header)
                         f_name ='_'.join([time_stub, header_uid, feature, '00'+str(i)+'.tif'])
                         #f_name = '_'.join([_filename_gen(header),'00'+str(i)+'.tif'])
@@ -1502,18 +1508,19 @@ def save_tif_test(headers, tif_name = False, sum_frames = True, dark_uid=False, 
                         print('Sorry, something went wrong with your tif saving')
                         return
             else:
-                # require input of temperature series!!!
+                # require input of motor series!!!
+                events = list(get_events(header))
                 for i in range(light_imgs.shape[0]): # length of light images should be as long as temp series
                     if not tif_name:
                         header_uid = header.start.uid[:5]
-                        time_stub = _timestampstr(header.stop.time)
+                        time_stub = _timestampstr(events[i]['timestamps']['pe1_image_lightfield'])
                         feature = _feature_gen(header)
                         temp = str(temp_series[i])+'k'
                         f_name ='_'.join([time_stub, header_uid, feature, temp, '00'+str(i)+'.tif'])
                         #f_name = '_'.join([_filename_gen(header),'00'+str(i)+'.tif'])
                         #f_name = '_'.join(header_filename, '00'+str(i)+'.tif')
                     else:
-                        f_name ='_'.join([tif_name, temp, '00'+str(i)+'.tif'])
+                        f_name ='_'.join([tif_name, '00'+str(i)+'.tif'])
                     #print(f_name)
                     w_name = os.path.join(W_DIR,f_name)
                     img = correct_imgs[i]
@@ -1534,12 +1541,11 @@ def save_tif_test(headers, tif_name = False, sum_frames = True, dark_uid=False, 
         f_name = _filename_gen(header) + '.cfg'
         config_f_name = '_'.join(['config', f_name])
         w_config_name = os.path.join(W_DIR, config_f_name)
-        try:
-            #config_dict=header.start.calibration_scan_info.calibration_information['config_data']  the right one, disable it for test
-            config_dict = header.start['calibration_information']['config_data']
-        except AttributeError:
-            print('Can not find your calibration config data in current metadata dictionary. Did you put it to other fields?')
-            print('if still wish to save your config data, use write_config() function')
+        if set_value('config_data', header.start):
+            config_dict = set_value('config_data',header.start)['config_data']
+        else:
+            print('Can not find your calibration config data in current metadata dictionary. Did you save it at all?')
+            print('if you want to save your config data later, use write_config() function')
             return
         if isinstance(config_dict, dict):
             pass
@@ -1548,14 +1554,14 @@ def save_tif_test(headers, tif_name = False, sum_frames = True, dark_uid=False, 
             return
 
         w_name =None
-        '''
+        
         write_config(config_dict, w_config_name)
         if os.path.isfile(w_config_name):
             print('%s has been saved at %s' % (config_f_name, W_DIR))
         else:
             print('Sorry, something went wrong when saving your config data. Please use write_config() function to try again')
             # very unlikely to happen but still leave it here
-        '''
+       
         # write the rest metadata as a file:
         metadata_dict = []
         for k,v in header.start.items():
