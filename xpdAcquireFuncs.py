@@ -86,10 +86,13 @@ def _MD_template():
     _clean_metadata()
     gs.RE.md['iscalib'] = 0
     gs.RE.md['isdark'] = 0
+    gs.RE.md['isbackground'] = 0 # back ground image
     gs.RE.md['experimenters'] = []
     gs.RE.md['sample_name'] = ''
     gs.RE.md['calibrant'] = '' # transient, only for calibration set
     gs.RE.md['user_supply'] = {}
+    gs.RE.md['commenets'] = ''
+    gs.RE.md['SAF_number'] = ''
 
     gs.RE.md['sample'] = {}
     gs.RE.md['sample']['composition'] = {}
@@ -753,13 +756,14 @@ def get_temp_scan(start_temperature, final_temperature, temperature_step, scan_e
         print('image collection failed. Check why gs.RE(scan) is not working and rerun')
         return
 
-def get_temp_scan_test(t0, tf, t_space):
-    '''default value:
-        scan_time = 1.0, scan_exposure_time = 0.5, commments={}
-    '''
-    tscan = bluesky.scan.DeltaScan([pe1], cs700, t0, tf, tspace)
-    scan_type = 'temp_scan'
-    get_mys_scan(tscan, scan_type)
+# no it's not gonna work
+#def get_temp_scan_test(t0, tf, t_space):
+#    '''default value:
+#        scan_time = 1.0, scan_exposure_time = 0.5, commments={}
+#    '''
+#    tscan = bluesky.scan.DeltaScan([pe1], cs700, t0, tf, tspace)
+#    scan_type = 'temp_scan'
+#    get_my_scan(tscan, scan_type)
 
 
 def get_my_scan(scan_def, scan_type, scan_time=1.0, scan_exposure_time=0.5, comments={}):
@@ -1353,7 +1357,7 @@ def _clean_metadata():
         del(gs.RE.md[key])
     gs.RE.md['sample'] = {}
 
-def save_tif_test(headers, tif_name = False, sum_frames = True, dark_uid=False, temp_series = False):
+def save_tif_test(headers, tif_name = False, sum_frames = True, dark_uid=False, motor_series = False):
     ''' save images obtained from dataBroker as tiff format files. It returns nothing.
 
     arguments:
@@ -1361,7 +1365,7 @@ def save_tif_test(headers, tif_name = False, sum_frames = True, dark_uid=False, 
         file_name - str - optional. File name of tif file being saved. default setting yields a name made of time, uid, feature of your header
         sum_frames - bool - optional. when it is set to True, image frames contained in header will be summed as one file
         dark_uid - str - optional. The uid of dark_image you wish to use. If unspecified, the most recent dark stack in dark_base will beused.
-        temp_series -list - optional. List of temeprature series. Reserved for internal use, don't change it.
+        motor_series -list - optional. series of motor values. Use it when doing motor scan, like temperature scan, tth_scan or so.
 
     '''
     if type(list(headers)[1]) == str:
@@ -1385,11 +1389,7 @@ def save_tif_test(headers, tif_name = False, sum_frames = True, dark_uid=False, 
             comment = header.start['comments']
         except KeyError:
             pass
-        try:
-           cal = header.start['calibration']
-        except KeyError:
-            pass
-        # get images and expo time from headers
+        # get images and exposure time from headers
         try:
             light_imgs = np.array(get_images(header,'pe1_image_lightfield'))
         except IndexError:
@@ -1398,9 +1398,10 @@ def save_tif_test(headers, tif_name = False, sum_frames = True, dark_uid=False, 
             print('Was area detector correctly mounted then?')
             print('Stop saving')
             return
-        try:
-            cnt_time = header.start.scan_info['scan_exposure_time']
-        except KeyError:
+        if set_value('scan_exposure_time', d=header.start):
+            cnt_time = set_value('scan_exposure_time', d = header.start)['scan_exposure_time']
+            #cnt_time = header.start.scan_info['scan_exposure_time']
+        else:
             print('scan exposure time in your header can not be found, use default 0.5 secs for dark image correction.')
             print('Dont worry, a slightly off correction will not significantly degrade quality of your data') # fixme: comfort user??
             cnt_time = 0.5
@@ -1439,11 +1440,11 @@ def save_tif_test(headers, tif_name = False, sum_frames = True, dark_uid=False, 
             dark_header = db[str(dark_uid)]
 
         print('use uid = %s dark image scan' % dark_header.start.uid)
-        try:
-            dark_cnt_time = dark_header.start['dark_scan_info']['dark_exposure_time']
+        if set_value('dark_exposure_time', dark_header.start):
+            dark_cnt_time = set_value('dark_exposure_time', dark_header.start)['dark_exposure_time']
         except KeyError:
-            print('can not find dark_exposure_time in header of dark images; using default 0.5 seconds now...')
-            print('Dont worry, a slightly off correction will not significantly degrade quality of your data') # fixme: comfort user??
+            print('Could not find dark_exposure_time in header with uid= %s; using default 0.5 seconds now...' % dark_header.start.uid)
+            print('Dont worry, a slightly off correction will not significantly degrade quality of your data')
             dark_cnt_time = 0.5 # default value
 
         # dark correction
@@ -1562,7 +1563,7 @@ def save_tif_test(headers, tif_name = False, sum_frames = True, dark_uid=False, 
                 pass
             else:
                metadata_dict[k]=v
-        #wrie!!!!!
+        #fixme: write!!!
 
 def get_temp(header):
     ''' Return temperatue serises in a header
