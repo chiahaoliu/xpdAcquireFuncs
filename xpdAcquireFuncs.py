@@ -1314,37 +1314,6 @@ def print_dict(d, ident = '', braces=1):
             print (ident+'%s = %s' %(key, value))
 
 
-''' Don't use it, it is slow and potentially dangerous to local work stations
-when saving a lot of tif files.
-def prompt_save(name,doc):
-    if name == 'stop':
-        header = db[doc['uid']] # fixme: how to do doc.uid ????
-        #dummy = ''
-        #dummy_key_list = [f for f in header.start.keys() if f in feature_list] # stroe it independently
-
-        #for key in dummy_key_list:
-        #    dummy += str(header.start[key])+'_'
-
-        #feature = dummy[:-1]
-        feature = _feature_gen(header)
-
-        # prepare timestamp, uid
-        time_stub = _timestampstr(header.stop.time)
-        uid = header.stop.uid[:5]
-        imgs = get_images(header,'pe1_image_lightfield')
-
-        for i in range(imgs.shape[0]):
-            f_name = '_'.join([time_stub, uid, feature,'00'+str(i)+'.tif'])
-            w_name = os.path.join(backup_dir,f_name)
-            img = imgs[i]
-            imsave(w_name, img) # overwrite mode !!!!
-            if os.path.isfile(w_name):
-                print('%s has been saved at %s' % (f_name, backup_dir))
-            else:
-                print('Sorry, something went wrong with your tif saving')
-                return
-'''
-
 def _clean_metadata():
     '''
     reserve for completely cleaning metadata dictionary
