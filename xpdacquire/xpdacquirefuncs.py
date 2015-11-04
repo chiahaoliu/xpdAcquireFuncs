@@ -18,9 +18,13 @@ import os
 import time
 import copy
 import datetime
+import matplotlib.pyplot as plt
+import matplotlib as mpl
 import numpy as np
 import pandas as pd
-import bluesky.scans
+
+import bluesky
+from bluesky.scans import *
 from bluesky.broker_callbacks import LiveImage
 from bluesky.callbacks import CallbackBase, LiveTable, LivePlot
 
@@ -33,6 +37,9 @@ from metadatastore.commands import find_run_starts
 from tifffile import *
 
 from bluesky.broker_callbacks import LiveImage
+
+
+
 
 pd.set_option('max_colwidth',50)
 pd.set_option('colheader_justify','left')
@@ -122,11 +129,11 @@ def scan_info():
     except KeyError:
         all_scan_info.append('')
     try:
-        all_scan_info.append(gs.RE.md['calibration_scan_info']['calibration_exposure_time'])
+        all_scan_info.append(gs.RE.md['calibration_scan_info']['calibration_scan_exposure_time'])
     except KeyError:
         all_scan_info.append('')
     try:
-        all_scan_info.append(gs.RE.md['dark_scan_info']['dark_exposure_time'])
+        all_scan_info.append(gs.RE.md['dark_scan_info']['dark_scan_exposure_time'])
     except KeyError:
         all_scan_info.append('')
     print('scan exposure time is %s, calibration exposure time is %s, dark scan exposure time is %s' % (all_scan_info[0], all_scan_info[1], all_scan_info[2]))
@@ -199,9 +206,10 @@ def get_dark_images(num=300, dark_scan_exposure_time=0.2):
        num - int - Optional. Number of dark frames to take.  Default = 300
        cnt_time - float - Optional. exposure time for each frame. Default = 0.2
     '''
-    gs = _bluesky_global_state()
     # set up scan
     gs = _bluesky_global_state()
+    RE = _bluesky_RE()
+    pe1 = _bluesky_pe1()
     gs.RE.md['isdark'] = True
     dark_cnt_hold = copy.copy(pe1.acquire_time)
     pe1.acquire_time = dark_scan_exposure_time
@@ -211,12 +219,12 @@ def get_dark_images(num=300, dark_scan_exposure_time=0.2):
         gs.RE.md['dark_scan_info'] = {}
     gs.RE.md['dark_scan_info'] = {'dark_scan_exposure_time':dark_scan_exposure_time}
 
+    #sh1.close = 1  # close shutter
+
     try:
-        sh1.closer = 1  # close shutter
         ctscan = bluesky.scans.Count([pe1],num)
         ctscan.subs = LiveTable(['pe1_image_lightfield'])
         gs.RE(ctscan)
-
         gs.RE.md['isdark'] = False
         #del(gs.RE.md['dark_scan_info'])
         pe1.acquire_time = dark_cnt_hold
@@ -227,18 +235,18 @@ def get_dark_images(num=300, dark_scan_exposure_time=0.2):
         pe1.acquire_time = dark_cnt_hold
         # fixme code to to set filter/shutter back to initial state
 
-    # write images to tif file, only save 3 images in the middle as a hook and data interrogation
+    # write images to tif file, only save last 3 images as a hook and for data interrogation
     dark_base_header = db[-1]
     uid = dark_base_header.start.uid[:6]
     time_stub = _timestampstr(dark_base_header.stop.time)
     imgs = np.array(get_images(dark_base_header,'pe1_image_lightfield'))
-    #mid = round(num/2)
+    print(np.shape(imgs))
     for i in range(num-4, num):
         f_name = '_'.join([time_stub, uid, 'dark','00'+str(i)+'.tif'])
         w_name = os.path.join(D_DIR,f_name)
         img = imgs[i]
         imsave(w_name, img) # overwrite mode
-        print('%ith images of dark scans have been saved to %s' % (i+1, W_DIR))
+        print('%ith images of dark scans have been saved to %s' % (i+1, D_DIR))
         if not os.path.isfile(w_name):
             print('Error: dark image tif file not written')
             print('Investigate and re-run')
@@ -260,9 +268,11 @@ def get_calibration_images (calibrant, wavelength, calibration_scan_exposure_tim
             It gets stored in the 'user_supplied' dictionary.
     '''
     gs = _bluesky_global_state()
+    pe1 = _bluesky_pe1()
+    RE = _bluesky_RE()
     # Prepare hold state
     try:
-        #composition_hold = copy.copy(gs.RE.md['sample']['composition']) as sample dictionary contains all information
+        composition_hold = copy.copy(gs.RE.md['sample']['composition']) #as sample dictionary contains all information
         sample_name_hold = copy.copy(gs.RE.md['sample_name'])
         sample_hold = copy.copy(gs.RE.md['sample'])
         cnt_hold = copy.copy(pe1.acquire_time)
@@ -279,12 +289,13 @@ def get_calibration_images (calibrant, wavelength, calibration_scan_exposure_tim
     gs.RE.md['iscalibration'] = True
     gs.RE.md['calibrant'] = calibrant
     gs.RE.md['sample_name'] = calibrant
-    if not composition:
-        gs.RE.md['sample']['composition'] = calibrant
-        # fixme, in the future, this should be a parsed field:
-        # [{'phase1':{'Na',1},'phase2':{'Cl':1}}]
-    else:
-        gs.RE.md['sample']['composition'] = composition
+    #if not composition:
+        #gs.RE.md['sample']['composition'] = calibrant
+        ## fixme, in the future, this should be a parsed field:
+        ## [{'phase1':{'Na',1},'phase2':{'Cl':1}}]
+    #else:
+        #gs.RE.md['sample']['composition'] = composition
+
     gs.RE.md['calibration_scan_info']['calibration_scan_exposure_time']=calibration_scan_exposure_time
     gs.RE.md['calibration_scan_info']['num_calib_exposures']=num
     gs.RE.md['calibration_scan_info']['wavelength']=wavelength
@@ -307,7 +318,7 @@ def get_calibration_images (calibrant, wavelength, calibration_scan_exposure_tim
         del(gs.RE.md['calibrant'])
         gs.RE.md['sample_name'] = sample_name_hold
         gs.RE.md['sample'] = sample_hold
-        #gs.RE.md['sample']['composition'] = composition_hold
+        gs.RE.md['sample']['composition'] = composition_hold
     except KeyError:
         # recover to previous state, set to values before calibration
         pe1.acquire_time = cnt_hold
@@ -315,7 +326,7 @@ def get_calibration_images (calibrant, wavelength, calibration_scan_exposure_tim
         del(gs.RE.md['calibrant'])
         gs.RE.md['sample_name'] = sample_name_hold
         gs.RE.md['sample'] = sample_hold
-        #gs.RE.md['sample']['composition'] = composition_hold
+        gs.RE.md['sample']['composition'] = composition_hold
         print('scan failed. metadata dictionary reset to starting values.')
         print('To debug, try running some scans using ctscan=bluesky.scans.Count([pe1])')
         print('then do gs.RE(ctscan).  When it is working, run get_calibration_images() again')
@@ -344,6 +355,9 @@ def get_count_scan(scan_time=1.0, scan_exposure_time=0.5, comments={}):
         temperature
     '''
     gs = _bluesky_global_state()
+    RE = _bluesky_RE()
+    pe1 = _bluesky_pe1()
+    cs700 = _bluesky_cs700()
     if comments:
         extra_key = comments.keys()
         for key, value in comments.items():
@@ -439,6 +453,9 @@ def get_temp_scan(start_temperature, final_temperature, temperature_step, scan_e
         comments - dictionary - optional. dictionary of user defined key:value pairs.
     '''
     gs = _bluesky_global_state()
+    RE = _bluesky_RE()
+    pe1 = _bluesky_pe1()
+    cs700 = _bluesky_cs700()
     if comments:
         extra_key = comments.keys()
         for key, value in comments.items():
@@ -952,7 +969,7 @@ def table_gen(headers):
     comment_list = list()
     uid_list = list()
 
-    if type(list(headers)[1]) == str:
+    if type(list(headers)[0]) == str:
         header_list = []
         header_list.append(headers)
     else:
@@ -1361,6 +1378,31 @@ def _bluesky_metadata_store():
     '''
     gs = _bluesky_global_state()
     return gs.RE.md
+
+def _bluesky_pe1():
+    from ophyd.controls.area_detector import (AreaDetectorFileStoreHDF5, AreaDetectorFileStoreTIFF,AreaDetectorFileStoreTIFFSquashing)
+    # from shutter import sh1
+    #shctl1 = EpicsSignal('XF:28IDC-ES:1{Det:PE1}cam1:ShutterMode', name='shctl1')
+    shctl1 = EpicsSignal('XF:28IDC-ES:1{Sh:Exp}Cmd-Cmd', name='shctl1')
+    pe1 = AreaDetectorFileStoreTIFFSquashing('XF:28IDC-ES:1{Det:PE1}',name='pe1',stats=[], ioc_file_path = 'H:/pe1_data',file_path ='/home/xf28id1/pe1_data')#shutter=shctl1, #shutter_val=(1, 0))
+    return pe1
+
+def _bluesky_RE():
+    import bluesky
+    from bluesky.run_engine import RunEngine
+    from bluesky.run_engine import DocumentNames
+    RE = RunEngine()
+    bluesky.register_mds.register_mds(RE)
+    return RE
+
+def _bluesky_cs700():
+    from ophyd.controls import EpicsMotor, PVPositioner
+    cs700 = PVPositioner('XF:28IDC-ES:1{Env:01}T-SP', readback='XF:28IDC-ES:1{Env:01}T-I',
+            #done='XF:28IDC-ES:1{Env:01}Cmd-Busy',
+            done_val=0, stop='XF:28IDC-ES:1{Env:01}Cmd-Cmd', 
+            stop_val=13, put_complete=True, name='cs700')
+    return cs700
+
 # Holding place
     #print(str(check_output(['ls', '-1t', '|', 'head', '-n', '10'], shell=True)).replace('\\n', '\n'))
     #gs.RE.md.past({'field':'value'})
