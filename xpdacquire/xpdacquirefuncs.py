@@ -20,9 +20,19 @@ import copy
 import datetime
 import numpy as np
 import pandas as pd
+import bluesky.scans
+from bluesky.broker_callbacks import LiveImage
+from bluesky.callbacks import CallbackBase, LiveTable, LivePlot
 
+from ophyd.commands import *
+from ophyd.controls import *
 
-#pd.set_option('max_colwidth',70)
+from dataportal import DataBroker as db
+from dataportal import get_events, get_table, get_images
+from metadatastore.commands import find_run_starts
+from tifffile import *
+
+pd.set_option('max_colwidth',50)
 pd.set_option('colheader_justify','left')
 
 default_keys = ['owner', 'beamline_id', 'group', 'config', 'scan_id'] # required by dataBroker
@@ -93,6 +103,7 @@ def _MD_template():
 def scan_info():
     ''' hard coded scan information. Aiming for our standardized metadata
     dictionary'''
+    gs = _bluesky_global_state()
     all_scan_info = []
     try:
         all_scan_info.append(gs.RE.md['scan_info']['exposure_time'])
@@ -171,6 +182,7 @@ def save_tif(headers, tif_name = False, sum_frames = True, dark_uid=False, temp_
         temp_series -list - optional. List of temeprature series. Reserved for internal use, don't change it.
 
     '''
+    gs = _bluesky_global_state()
     import matplotlib.pyplot as plt
     if type(list(headers)[1]) == str:
         header_list = list()
@@ -382,6 +394,7 @@ def get_dark_images(num=300, dark_scan_exposure_time=0.2):
        num - int - Optional. Number of dark frames to take.  Default = 300
        cnt_time - float - Optional. exposure time for each frame. Default = 0.2
     '''
+    gs = _bluesky_global_state()
     # set up scan
     gs.RE.md['isdark'] = True
     dark_cnt_hold = copy.copy(pe1.acquire_time)
@@ -415,7 +428,7 @@ def get_dark_images(num=300, dark_scan_exposure_time=0.2):
         w_name = os.path.join(D_DIR,f_name)
         img = imgs[i]
         imsave(w_name, img) # overwrite mode
-        print('%ith images of dark scans have been saved to %s' % (i, W_DIR))
+        print('%ith images of dark scans have been saved to %s' % (i, D_DIR))
         if not os.path.isfile(w_name):
             print('Error: dark image tif file not written')
             print('Investigate and re-run')
@@ -434,7 +447,7 @@ def get_calibration_images (calibrant, wavelength, calibration_scan_exposure_tim
         **kwargs - dictionary - User specified info about the calibration. Only use it to add information about the calibration
             It gets stored in the 'user_supplied' dictionary.
     '''
-
+    gs = _bluesky_global_state()
     # Prepare hold state
     try:
         #composition_hold = copy.copy(gs.RE.md['sample']['composition']) as sample dictionary contains all information
@@ -499,71 +512,8 @@ def get_calibration_images (calibrant, wavelength, calibration_scan_exposure_tim
     f_name = '_'.join(['calib', _filename_gen(calib_scan_header) +'.tif'])
     w_name = os.path.join(W_DIR, f_name)
     save_tif(calib_scan_header, w_name, sum_frames=True)
-'''
-    # sum images together and save
-    #fixme: for now dark correction is hard coded here but in the future, will be integrated into save_tif
 
-    imgs = np.array(get_images(header,'pe1_image_lightfield'))
-    calib_cnt_time = header.start.calibration_scan_info['calibration_scan_exposure_time']
-
-    # Identify the latest dark stack
-    uid_list = []
-    f_d = [ f for f in os.listdir(D_DIR) ]
-    for f in f_d:
-        uid_list.append(f[:5]) # get uids in dark base
-    uid_unique = np.unique(uid_list)
-
-    header_list = []
-    for d_uid in uid_unique:
-        header_list.append(db[d_uid])
-
-    time_list = []
-    for header in header_list:
-        time_list.append(header.stop.time)
-
-    ind = np.argsort(time_list)
-    d_header = header_list[ind[-1]]
-    print('use uid = %s dark image scan' % d_header.start.uid)
-    try:
-        d_cnt_time = d_header.start.dark_scan_info['dark_exposure_time']
-    except KeyError:
-        print('can not find dark_exposure_time in header of dark images; using default 0.5 seconds now...')
-        print('Dont0 worry, a slightly off correction will not significantly degrade quality of your data') # fixme: comfort user??
-        d_cnt_time = 0.5 # default value
-
-    # dark correction
-    print('Plotting and saving your dark-corrected image(s) now....')
-    d_num = int(np.round(calib_cnt_time / d_cnt_time)) # how many dark frames needed for single light image
-    print('Number of dark images applied to correction your image(s): %i....' % d_num)
-    d_img_list = np.array(get_images(d_header,'pe1_image_lightfield')) # confirmed that it comes with reverse order
-    d_len = d_img_list.shape[0]
-    correct_imgs = []
-    for i in range(imgs.shape[0]):
-        correct_imgs.append(imgs[i]-np.sum(d_img_list[d_len-d_num:d_len],0)) # use last d_num dark images
-
-    multiple_images = False
-    if imgs.ndim ==3: multiple_images = True
-    if multiple_images:
-        img = np.sum(correct_imgs,0)
-    else:
-        img = correct_imgs
-
-    fig = plt.figure(f_name)
-    plt.imshow(img)
-    plt.show()
-    imsave(w_name, img) # overwrite mode now !!!!
-    if os.path.isfile(w_name):
-        print('%s has been saved at %s' % (f_name, W_DIR))
-    else:
-        print('Sorry, something went wrong with your tif saving')
-        return
-
-    # confirm that file has been written
-    if os.path.isfile(w_name):
-        print('A summed image %s has been saved to %s' % (f_name, W_DIR))
-    '''
-def get_count_scan(scan_time=1.0, scan_exposure_time=0.5, scan_def=False,
-        comments={}):
+def get_count_scan(scan_time=1.0, scan_exposure_time=0.5, scan_def=False, comments={}):
     '''function for getting a light image
 
     Arguments:
@@ -577,7 +527,7 @@ def get_count_scan(scan_time=1.0, scan_exposure_time=0.5, scan_def=False,
         will do count scan and if scan_mode = 1, this function will do a
         temperature
     '''
-
+    gs = _bluesky_global_state()
     if comments:
         extra_key = comments.keys()
         for key, value in comments.items():
@@ -674,6 +624,7 @@ def get_temp_scan(start_temperature, final_temperature, t_steps=False, scan_expo
         scan_exposure_time - float - optional. exposure time per frame, default value is 0.5 s
         comments - dictionary - optional. dictionary of user defined key:value pairs.
     '''
+    gs = _bluesky_global_state()
     if comments:
         extra_key = comments.keys()
         for key, value in comments.items():
@@ -766,6 +717,7 @@ def load_calibration(config_file = False, config_dir = False):
     config_dir - str - optional. directory where your config files are located. If not specified, default directory is used
     normal usage is not to use change these defaults.
     '''
+    gs = _bluesky_global_state()
     from configparser import ConfigParser
     if not config_dir:
         read_dir = R_DIR
@@ -822,12 +774,14 @@ def load_calibration(config_file = False, config_dir = False):
     print('Type gs.RE.md to check if config data has been stored properly')
     print('Run load_calibration() again to update/switch your config file')
 
-def new_user(user_list):
+def new_experimenters(experimenters_list):
     ''' This function sets up experimenter name(s). This function can be run at anytime to change experimenter global setting
     Argument:
-        user_list - str or list - name of current experimenters
+        experimenters_list - str or list - name of current experimenters
     '''
-    gs.RE.md['experimenters'] = user_list
+    gs = _bluesky_global_state()
+    gs.RE.md['experimenters'] = experimenters_list
+    print('Current experimenters is/are %s' % experimenters_list)
 
 
 def new_sample(sample_name, composition = '', experimenters=[], comments={}, verbose = 1):
@@ -847,6 +801,7 @@ def new_sample(sample_name, composition = '', experimenters=[], comments={}, ver
     comments - dict - optional. user supplied comments that relate to the current sample. Default = ''
     verbose - bool - optional. set to false to suppress printed output.
     '''
+    gs = _bluesky_global_state()
     if verbose: print('Setting up global run engines(gs.RE) with your metadata.......')
 
     if not experimenters:
@@ -874,10 +829,8 @@ def new_sample(sample_name, composition = '', experimenters=[], comments={}, ver
         print('Current sample composition is %s' % composition)
         #print('To change composition, rerun new_sample() with composition passed as an argument')
     print('To change experimenters or sample, rerun new_user() or new_sample() respectively, with desired experimenter list as the argument')
-    #time_form = str(datetime.datetime.fromtimestamp(time.time()))
-    #date = time_form[:10]
-    #hour = time_form[11:16]
-    #timestampstring = '_'.join([date, hour]) #fixme, get timestamp from central clock through bluesky
+    
+    gs.RE.md['sample_name'] = sample_name
     time_stub = _timestampstr(time.time())
     try:
         gs.RE.md['sample']
@@ -1127,6 +1080,7 @@ def time_search(startTime,stopTime=False,exp_day1=False,exp_day2=False):
 
 
 def sanity_check():
+    gs = _bluesky_global_state()
     user = gs.RE.md['experimenters']
     print('Current experimenter(s) are: %s' % user)
     sample_name = gs.RE.md['sample_name']
@@ -1158,36 +1112,7 @@ def print_dict(d, ident = '', braces=1):
             print (ident+'%s = %s' %(key, value))
 
 
-''' Don't use it, it is slow and potentially dangerous to local work stations
-when saving a lot of tif files.
-def prompt_save(name,doc):
-    if name == 'stop':
-        header = db[doc['uid']] # fixme: how to do doc.uid ????
-        #dummy = ''
-        #dummy_key_list = [f for f in header.start.keys() if f in feature_list] # stroe it independently
 
-        #for key in dummy_key_list:
-        #    dummy += str(header.start[key])+'_'
-
-        #feature = dummy[:-1]
-        feature = _feature_gen(header)
-
-        # prepare timestamp, uid
-        time_stub = _timestampstr(header.stop.time)
-        uid = header.stop.uid[:5]
-        imgs = get_images(header,'pe1_image_lightfield')
-
-        for i in range(imgs.shape[0]):
-            f_name = '_'.join([time_stub, uid, feature,'00'+str(i)+'.tif'])
-            w_name = os.path.join(backup_dir,f_name)
-            img = imgs[i]
-            imsave(w_name, img) # overwrite mode !!!!
-            if os.path.isfile(w_name):
-                print('%s has been saved at %s' % (f_name, backup_dir))
-            else:
-                print('Sorry, something went wrong with your tif saving')
-                return
-'''
 def _timestampstr(timestamp):
     time= str(datetime.datetime.fromtimestamp(timestamp))
     date = time[:10]
