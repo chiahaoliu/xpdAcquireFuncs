@@ -2,7 +2,7 @@
 #
 # copyright 2015 trustees of Columbia University in the City of New York
 #
-# coded by Chia-Hao Liu, Simon Billinge and Dan Allan
+# coded by Chia-Hao Liu, Simon Billinge, Pavol Juhas and Dan Allan
 #
 # this code is in the public domain.  Use at your own risk.
 #
@@ -735,11 +735,13 @@ def new_sample(sample_name, composition, experimenters=[], comments={}, verbose 
 
     Arguments:
 
-    sample_name - str - current sample name, for example, dppa2 or Ni
-    composition - list - chemical composition of your sample, it is described by phases and elements.
-        For example, [{'phase1':{'Na',1}},{'phase2':{'Cl':1}}] for NaCl
+    sample_name - str - sample name, for example, "dppa2" or "Al2O3"
+    composition - list - chemical composition of your sample, described by phases and elements.
+        For example, [{"phase_name":"NaCl","phase_amt":1.0,{"Na":1.0,"Cl":1.0}},
+        {"phase_name":"Al2O3","phase_amt":2.0,{"Al":2.,"O":3.}}] for a 1:2 mix of NaCl and Al2O3.
+        Correctly composed composition fields will allow automated data reduction and model setup in XPDsuite.
     experimenters - list - optional. list of current experimenter(s). reuse current value if not given
-    comments - dict - optional. user supplied comments that relate to the current sample. Default = ''
+    comments - dict - optional. user supplied comments that relate to the current sample. Default = ""
     verbose - bool - optional. set to false to suppress printed output.
     '''
     gs = _bluesky_global_state()
@@ -761,7 +763,7 @@ def new_sample(sample_name, composition, experimenters=[], comments={}, verbose 
             comments = gs.RE.md['comments']
         except KeyError:
             comments = ''
-        print('Current comments to this experiment is "%s"' % comments)
+        print('Current comments to this experiment are "%s"' % comments)
     else:
         new_comments = comments
         gs.RE.md['comments'] = comments
@@ -792,7 +794,7 @@ def new_sample(sample_name, composition, experimenters=[], comments={}, verbose 
     time_stub = _timestampstr(time.time())
     gs.RE.md['sample']['sample_load_time'] = time_stub
     if verbose: print('sample_load_time has been recorded: %s' % time_stub)
-    print('To update metadata dictionary, re-run new_sample() or new_experimenters(), with desired information as the argument')
+    print('To update metadata dictionary, re-run new_sample() or new_experimenters()')
    # if verbose: print('Sample and experimenter metadata have been set')
     if verbose: print('To check what will be saved with your scans, type "gs.RE.md"')
 
