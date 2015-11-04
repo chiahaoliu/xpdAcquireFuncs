@@ -34,10 +34,8 @@ from ophyd.controls import *
 from dataportal import DataBroker as db
 from dataportal import get_events, get_table, get_images
 from metadatastore.commands import find_run_starts
-from tifffile import *
 
-from bluesky.broker_callbacks import LiveImage
-
+from xpdacquire.config import datapath
 
 
 
@@ -48,7 +46,7 @@ default_keys = ['owner', 'beamline_id', 'group', 'config', 'scan_id'] # required
 feature_keys = ['sample_name','experimenters'] # required by XPD, time_stub and uid will be automatically added up as well
 
 # These are the default directory paths on the XPD data acquisition computer.  Change if needed here
-W_DIR = '/home/xf28id1/xpdUser/tif_base'                # where the user-requested tif's go.  Local drive
+W_DIR = datapath.tif                # where the user-requested tif's go.  Local drive
 R_DIR = '/home/xf28id1/xpdUser/config_base'             # where the xPDFsuite generated config files go.  Local drive
 D_DIR = '/home/xf28id1/xpdUser/dark_base'               # where the tifs from dark-field collections go. Local drive
 S_DIR = '/home/xf28id1/xpdUser/script_base'             # where the user scripts go. Local drive
@@ -342,17 +340,14 @@ def get_calibration_images (calibrant, wavelength, calibration_scan_exposure_tim
     LAST_CALIB_UID = calib_scan_header.start.uid
 
 
-def get_count_scan(scan_time=1.0, scan_exposure_time=0.5, comments={}):
+def get_light_images(scan_time=1.0, scan_exposure_time=0.5, scan_def = False, comments={}):
     '''function for getting a light image
 
     Arguments:
         scan_time - float - optional. data collection time for the scan. default = 1.0 seconds
-        scan_exposure_time - float - optional. exposure time per frame. number of exposures will be
-            set to int(scan_time/exposure_time) (round off)
+        scan_exposure_time - float - optional. exposure time per frame. number of exposures will be set to int(scan_time/exposure_time) (round off)
         comments - dictionary - optional. dictionary of user defined key:value pairs.
-        scan_mode - int - mode of your scan. if scan_mode = 0, this function
-        will do count scan and if scan_mode = 1, this function will do a
-        temperature
+        scan_def - object - optional. bluesky scan object defined by user. Default is a count scan
     '''
     gs = _bluesky_global_state()
     RE = _bluesky_RE()
@@ -391,6 +386,12 @@ def get_count_scan(scan_time=1.0, scan_exposure_time=0.5, comments={}):
         temp_hold =''
         pass
 
+    if not scan_def:
+        scan = bluesky.scans.Count([pe1],num)
+    else:
+        num = scan_def.num
+        scan = scan_def
+
     # don't expose the PE for more than 5 seconds max, set it to 1 seconds if you go beyond limit
     if scan_exposure_time > 5.0:
         print('Your exposure time is larger than 5 seconds. This can damage detector')
@@ -398,52 +399,50 @@ def get_count_scan(scan_time=1.0, scan_exposure_time=0.5, comments={}):
         print('Number of exposures will be recalculated so that scan time is the same....')
         scan_exposure_time = 4.0
         num = int(scan_time/scan_exposure_time)
-        print('Number of exposures is now %s' % num)
     else:
         num = int(scan_time/scan_exposure_time)
-
+    print('Number of exposures is now %s' % num)
     if num == 0: num = 1 # at least one scan
-
 
     # assign values to current scan
     scan_exposure_time_hold = copy.copy(pe1.acquire_time)
     pe1.acquisition_time = scan_exposure_time
-
+    scan_type = scan.logdict()['scn_cls']
     gs.RE.md['scan_info']['scan_exposure_time'] = scan_exposure_time
     gs.RE.md['scan_info']['number_of_exposures'] = num
     gs.RE.md['scan_info']['total_scan_duration'] = num*scan_exposure_time
-    gs.RE.md['scan_info']['scan_type'] = 'count_scan'
+    gs.RE.md['scan_info']['scan_type'] = scan_type
     gs.RE.md['sample']['temp'] = str(cs700.value[1])+'k'
 
-    # fixme: code to check the filter/shutter is open
+    #shutter status
+    #if sh1.open:
+        #pass
+    #else:
+        #sh1.open = 1
+
     try:
-    #sh1.open = 1 # force it to open
-        scan = bluesky.scans.Count([pe1],num)
+        #sh1.open = 1 # force it to open
         scan.subs = [LiveTable(['pe1_image_lightfield']),LiveImage('pe1_image_lightfield')]
-        gs.RE(scan)
-        header = db[-1]
+        #gs.RE(scan)
+        #header = db[-1]
         #feature = _feature_gen(header)
         filename = _filename_gen(header)
-        save_tif(header, sum_frames=True)
+        # let's not save every scan unless needed
+        #save_tif(header, sum_frames=True)
         #deconstruct the metadata
-        gs.RE.md['scan_info'] ={'scan_exposure_time': scan_exposure_time_hold,'number_of_exposures': scan_steps_hold, 'total_scan_duration':total_scan_duration_hold, 'scan_type': scan_type_hold}
-        gs.RE.md['user_supply'] = {}
-        gs.RE.md['sample']['temperature'] = temp_hold
+        #gs.RE.md['scan_info'] ={'scan_exposure_time': scan_exposure_time_hold,'number_of_exposures': scan_steps_hold, 'total_scan_duration':total_scan_duration_hold, 'scan_type': scan_type_hold}
+        #gs.RE.md['user_supply'] = {}
+        #gs.RE.md['sample']['temperature'] = temp_hold
     except:
         # deconstruct the metadata
-        gs.RE.md['scan_info'] = {
-                'scan_exposure_time' : scan_exposure_time_hold,
-                'number_of_exposures' : scan_steps_hold,
-                'total_scan_duration' : total_scan_duration_hold,
-                'scan_type' : scan_type_hold
-                }
+        gs.RE.md['scan_info'] = {'scan_exposure_time' : scan_exposure_time_hold,'number_of_exposures' : scan_steps_hold, 'total_scan_duration' : total_scan_duration_hold, 'scan_type' : scan_type_hold}
         gs.RE.md['user_supply'] = {}
         gs.RE.md['sample']['temperature'] = temp_hold
         print('image collection failed. Check why gs.RE(scan) is not working and rerun')
         return
-
+'''
 def get_temp_scan(start_temperature, final_temperature, temperature_step, scan_exposure_time=0.5, comments={}):
-    '''Running a temperature delta scan and save dark-corrected file
+    Running a temperature delta scan and save dark-corrected file
 
     Arguments:
         start_temperature - float - starting temperature
@@ -451,7 +450,7 @@ def get_temp_scan(start_temperature, final_temperature, temperature_step, scan_e
         temperature_step - int - step size of your temeprature scan.
         scan_exposure_time - float - optional. exposure time per frame, default value is 0.5 s
         comments - dictionary - optional. dictionary of user defined key:value pairs.
-    '''
+
     gs = _bluesky_global_state()
     RE = _bluesky_RE()
     pe1 = _bluesky_pe1()
@@ -515,7 +514,7 @@ def get_temp_scan(start_temperature, final_temperature, temperature_step, scan_e
         header = db[-1]
         #feature = _feature_gen(header)
         filename = _filename_gen(header)
-        temps = get_temp(header)
+        temps = get_motor(header,'cs700')
         save_tif(header, sum_frames = False, motor_series=temps)
     # note, do not close the shutter again afterwards, we will do it manually outside of this function
 
@@ -528,112 +527,7 @@ def get_temp_scan(start_temperature, final_temperature, temperature_step, scan_e
         gs.RE.md['user_supplied'] = {}
         print('image collection failed. Check why gs.RE(scan) is not working and rerun')
         return
-
-# no it's not gonna work
-#def get_temp_scan_test(t0, tf, t_space):
-#    '''default value:
-#        scan_time = 1.0, scan_exposure_time = 0.5, commments={}
-#    '''
-#    tscan = bluesky.scan.DeltaScan([pe1], cs700, t0, tf, tspace)
-#    scan_type = 'temp_scan'
-#    get_my_scan(tscan, scan_type)
-
-
-def get_my_scan(scan_def, scan_type, scan_time=1.0, scan_exposure_time=0.5, comments={}):
-    '''function for getting a light image
-
-    Arguments:
-        scan_def - bluesky scan object - user defined scan and pass it.
-            Please refer to http://nsls-ii.github.io/bluesky/scans.html for syntax and further information.
-        scan_type - str - scan type of user defined scan
-        scan_time - float - optional. data collection time for the scan. default = 1.0 seconds
-        scan_exposure_time - float - optional. exposure time per frame. number of exposures will be
-            set to int(scan_time/exposure_time) (round off)
-        comments - dictionary - optional. dictionary of user defined key:value pairs.
-    '''
-    gs = _bluesky_global_state()
-    if comments:
-        extra_key = comments.keys()
-        for key, value in comments.items():
-            gs.RE.md['user_supplied'][key] = value
-    # test if parent layers exitst
-    try:
-        gs.RE.md['scan_info']
-        gs.RE.md['sample']
-        pass
-    except KeyError:
-        gs.RE.md['scan_info']={}
-        gs.RE.md['sample'] = {}
-    # Prpare hold values, KeyError means blanck state, just pass it
-    try:
-        scan_type_hold = copy.copy(gs.RE.md['scan_info']['scan_type'])
-    except KeyError:
-        scan_type_hold =''
-        pass
-    try:
-        scan_steps_hold = gs.RE.md['scan_info']['number_of_exposures']
-    except KeyError:
-        scan_steps_hold =''
-        pass
-    try:
-        total_scan_duration_hold = gs.RE.md['scan_info']['total_scan_duration']
-    except KeyError:
-        total_scan_duration_hold =''
-        pass
-    try:
-        temp_hold = gs.RE.md['sample']['temperature']  # fixme: temporarily use
-    except:
-        temp_hold =''
-        pass
-
-    # don't expose the PE for more than 5 seconds max, set it to 1 seconds if you go beyond limit
-    if scan_exposure_time > 5.0:
-        print('Your exposure time is larger than 5 seconds. This can damage detector')
-        print('Exposure time is set to 4 seconds')
-        print('Number of exposures will be recalculated so that scan time is the same....')
-        scan_exposure_time = 4.0
-        num = int(scan_time/scan_exposure_time)
-        print('Number of exposures is now %s' % num)
-    else:
-        num = int(scan_time/scan_exposure_time)
-
-    if num == 0: num = 1 # at least one scan
-
-
-    #gs.RE.md['scan_info']['detector'] = pe1  # pe1 is not a simple object, call it directly causes I/O Error
-
-    try:
-        # fixme: code to check the filter/shutter is open
-        # assign values from current scan
-        scan_exposure_time_hold = copy.copy(pe1.acquire_time)
-        pe1.acquisition_time = scan_exposure_time
-
-        gs.RE.md['scan_info']['scan_exposure_time'] = scan_exposure_time
-        gs.RE.md['scan_info']['number_of_exposures'] = num
-        gs.RE.md['scan_info']['total_scan_duration'] = num*scan_exposure_time
-        gs.RE.md['scan_info']['scan_type'] = scan_type
-        gs.RE.md['sample']['temp'] = str(cs700.value[1])+'k'
-        scan = scan_def
-        scan.subs = LiveTable(['pe1_image_lightfield'])
-        gs.RE(scan)
-        header = db[-1]
-        #feature = _feature_gen(header)
-        filename = _filename_gen(header)
-        save_tif(header, sum_frames=True)
-        #deconstruct the metadata
-        gs.RE.md['scan_info'] ={'scan_exposure_time':
-                scan_exposure_time_hold,'number_of_exposures': scan_steps_hold, 'total_scan_duration':total_scan_duration_hold, 'scan_type': scan_type_hold}
-        gs.RE.md['user_supplied'] = {}
-        gs.RE.md['sample']['temperature'] = temp_hold
-    except:
-        # deconstruct the metadata
-        gs.RE.md['scan_info'] ={'scan_exposure_time':
-                scan_exposure_time_hold,'number_of_exposures': scan_steps_hold,'total_scan_duration': total_scan_duration_hold, 'scan_type': scan_type_hold}
-        gs.RE.md['user_supplied'] = {}
-        gs.RE.md['sample']['temperature'] = temp_hold
-        print('image collection failed. Check why gs.RE(scan) is not working and rerun')
-        return
-
+'''
 
 def load_calibration(config_file = False, config_dir = False):
     '''Function loads calibration values as metadata to save with scans
@@ -1333,28 +1227,29 @@ def save_tif(headers, tif_name = False, sum_frames = True, dark_uid=False, motor
         '''
 
 
-def get_temp(header):
-    ''' Return temperatue serises in a header
+def get_motor(header, motor_name):
+    ''' Return motor serises in a header
     argument:
     header - obj - a blusky header object
+    motor_name - str - name of motor in your scan
     '''
     img_len = np.array(get_images(header,'pe1_image_lightfield')).shape[0]
     events = list(get_events(header))
-    temp_len = len(events)
+    motor_len = len(events)
     if img_len == temp_len:
         pass
     else:
-        print('Something went wrong. Number of images you collected is not equal to the number of temeprature recorded')
-        print('Maybe some points are missing or unable to pull out from filestore. Please ask beamlinescientist what to do')
+        print('Something went wrong. Number of images you collected is not equal to the number of motor steps')
+        #print('Maybe some points are missing or unable to pull out from filestore. Please ask beamline scientist for what to do')
         return
     try:
-        temp_series = list()
+        motor_series = list()
         for event in events:
-            temp = event['data']['cs700']
-            temp_series.append(temp)
-        return temp_series
+            motor_step = event['data'][motor]
+            motor_series.append(motor_step)
+        return motor_series
     except KeyError:
-        print('There is no temperature information in this header, please check if you are looking at the correct data')
+        print('There is no motor information to %s in this header, please check if you are looking at the correct data' % motor_name)
         return
 
 def run_script(script_name):
