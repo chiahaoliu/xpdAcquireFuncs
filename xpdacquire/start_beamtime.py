@@ -39,7 +39,7 @@ def _input_metadata():
     '''
     from bluesky.standard_config import gs
     saf = input('SAF number of this beamtime: ')
-    gs.RE.md['saf'] = saf.strip()
+    gs.RE.md['SAF_num'] = saf.strip()
     pn = input('Principal Investigator (PI) name: ')
     gs.RE.md['pi_name'] = pn.strip()
     enames = input('Other experimenter names separated by commas: ')
@@ -47,7 +47,14 @@ def _input_metadata():
     exlist = [pn] + [n for n in exlist if n != pn]
     gs.RE.md['experimenters'] = exlist
     # TODO - check if user wants to reset the scan_id
-    # input("Reset scan_id to [{current_scan_id}]: ") ....
+    current_scan_id = gs.RE.md['scan_id']
+    reset_scanid = input('Current scan_id is %s. Do you wish to reset scan_id? (y/N) ' % current_scan_id)
+    if reset_scanid == 'y':
+        print('Reset scan_id to 1')
+        gs.RE.md['scan_id']= 1
+    else:
+        print('Keep current scan_id')
+
     return
 
 

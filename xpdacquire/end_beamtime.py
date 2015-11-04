@@ -1,19 +1,19 @@
-# python fixme
-def end_beamtime(userID):
+from xpdacquire.config import datapath
+W_DIR = datapath.tif
+D_DIR = datapath.dark
+R_DIR = datapath.config
+S_DIR = datapath.script
+
+def end_beamtime():
     '''cleans up at the end of a beamtime
 
     Function takes all the user-generated tifs and config files, etc., and archives them to a
     directory in the remote file-store with filename B_DIR/useriD
 
-    Arguments:
-        userID - string - unique id for the user group who is just finishing up
     '''
     import os
-
-    W_DIR = '/home/xf28id1/xpdUser/tif_base'                # where the user-requested tif's go.  Local drive
-    R_DIR = '/home/xf28id1/xpdUser/config_base'             # where the xPDFsuite generated config files go.  Local drive
-    D_DIR = '/home/xf28id1/xpdUser/dark_base'               # where the tifs from dark-field collections go. Local drive
-    B_DIR = '/tmp/pe1_data'                        # default networked drive where all tifs are automatically written but also user-generated data will be stored
+    
+    B_DIR = '/tmp/pe1_data' # default networked drive where all tifs are automatically written but also user-generated data will be stored
     while True:
         userID = input('Please enter the SAF number of this beamtime(no space): ')
         print('Checking if your input results in invalid directory name in unix system...')
@@ -21,7 +21,7 @@ def end_beamtime(userID):
         clean_name = [ ch for ch in userID if ch.isalnum()]
         clean_path = ''.join(clean_name)
         backup_trunk = os.path.join(B_DIR,clean_path)
-        print('Current data in tif_base, dark_base and config_base will be moved to %s' % backup_trunk)
+        print('Current data in tif_base, dark_base, config_base and script_base will be moved to %s' % backup_trunk)
         userJustify = input('Please confirm again that is a correct path (yes/no) :')
         if userJustify == 'yes':
             break
@@ -29,19 +29,6 @@ def end_beamtime(userID):
             print('Alright, lets do it agin')
             pass
 
-    # code to check if ALL of tif_base, etc. are empty
-    w_len = len(os.listdir(W_DIR))
-    d_len = len(os.listdir(D_DIR))
-    r_len = len(os.listdir(R_DIR))
-    s_len = len(os.listdir(S_DIR)) # script base
-    if (w_len!=0 and d_len!=0 and r_len!=0 and s_len!=0):
-        print('All the working directories appear to be empty.  Either end_beamtime.py has already been run')
-        print('or the path to the expected working directories are incorrectly set.')
-        print('The paths being checked are:')
-        print(W_DIR)
-        print(R_DIR)
-        print(D_DIR)
-        return
     # check if btrunk exitsts and create it if it doesn't exist
     if not os.path.exits(backup_trunk):
         os.makedir(backup_trunk)
