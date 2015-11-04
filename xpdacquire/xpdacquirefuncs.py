@@ -15,18 +15,23 @@ Instructions for reaching it are at the XPD beamline
 Code is currently hosted at gitHub.com/chiahaoliu/xpdAcquireFuncs
 '''
 import os
-import sys
 import time
 import copy
 import datetime
 import numpy as np
 import pandas as pd
-import matplotlib as ml
-import matplotlib.pyplot as plt
-import matplotlib.image as mpimg
-from configparser import ConfigParser
+import bluesky.scans
+from bluesky.broker_callbacks import LiveImage
+from bluesky.callbacks import CallbackBase, LiveTable, LivePlot
 
-import localimports
+from ophyd.commands import *
+from ophyd.controls import *
+
+from dataportal import DataBroker as db
+from dataportal import get_events, get_table, get_images
+from metadatastore.commands import find_run_starts
+from tifffile import *
+
 from bluesky.broker_callbacks import LiveImage
 
 pd.set_option('max_colwidth',50)
@@ -84,6 +89,7 @@ def _MD_template():
     ''' use to generate idealized metadata structure, for pictorial memory and
     also for data cleaning.
     '''
+    gs = _bluesky_global_state()
     _clean_metadata()
     gs.RE.md['iscalib'] = 0
     gs.RE.md['isdark'] = 0
@@ -109,6 +115,7 @@ def _MD_template():
 def scan_info():
     ''' hard coded scan information. Aiming for our standardized metadata
     dictionary'''
+    gs = _bluesky_global_state()
     all_scan_info = []
     try:
         all_scan_info.append(gs.RE.md['scan_info']['scan_exposure_time'])
@@ -192,7 +199,9 @@ def get_dark_images(num=300, dark_scan_exposure_time=0.2):
        num - int - Optional. Number of dark frames to take.  Default = 300
        cnt_time - float - Optional. exposure time for each frame. Default = 0.2
     '''
+    gs = _bluesky_global_state()
     # set up scan
+    gs = _bluesky_global_state()
     gs.RE.md['isdark'] = True
     dark_cnt_hold = copy.copy(pe1.acquire_time)
     pe1.acquire_time = dark_scan_exposure_time
@@ -250,7 +259,7 @@ def get_calibration_images (calibrant, wavelength, calibration_scan_exposure_tim
         **kwargs - dictionary - User specified info about the calibration. Only use it to add information about the calibration
             It gets stored in the 'user_supplied' dictionary.
     '''
-
+    gs = _bluesky_global_state()
     # Prepare hold state
     try:
         #composition_hold = copy.copy(gs.RE.md['sample']['composition']) as sample dictionary contains all information
@@ -317,9 +326,10 @@ def get_calibration_images (calibrant, wavelength, calibration_scan_exposure_tim
     f_name = '_'.join(['calib', _filename_gen(calib_scan_header) +'.tif'])
     w_name = os.path.join(W_DIR, f_name)
     save_tif(calib_scan_header, w_name, sum_frames=True)
-    
+
     global LAST_CALIB_UID
     LAST_CALIB_UID = calib_scan_header.start.uid
+
 
 def get_count_scan(scan_time=1.0, scan_exposure_time=0.5, comments={}):
     '''function for getting a light image
@@ -333,7 +343,7 @@ def get_count_scan(scan_time=1.0, scan_exposure_time=0.5, comments={}):
         will do count scan and if scan_mode = 1, this function will do a
         temperature
     '''
-
+    gs = _bluesky_global_state()
     if comments:
         extra_key = comments.keys()
         for key, value in comments.items():
@@ -407,7 +417,12 @@ def get_count_scan(scan_time=1.0, scan_exposure_time=0.5, comments={}):
         gs.RE.md['sample']['temperature'] = temp_hold
     except:
         # deconstruct the metadata
-        gs.RE.md['scan_info'] ={'scan_exposure_time': scan_exposure_time_hold,'number_of_exposures': scan_steps_hold,'total_scan_duration': total_scan_duration_hold, 'scan_type': scan_type_hold}
+        gs.RE.md['scan_info'] = {
+                'scan_exposure_time' : scan_exposure_time_hold,
+                'number_of_exposures' : scan_steps_hold,
+                'total_scan_duration' : total_scan_duration_hold,
+                'scan_type' : scan_type_hold
+                }
         gs.RE.md['user_supply'] = {}
         gs.RE.md['sample']['temperature'] = temp_hold
         print('image collection failed. Check why gs.RE(scan) is not working and rerun')
@@ -423,6 +438,7 @@ def get_temp_scan(start_temperature, final_temperature, temperature_step, scan_e
         scan_exposure_time - float - optional. exposure time per frame, default value is 0.5 s
         comments - dictionary - optional. dictionary of user defined key:value pairs.
     '''
+    gs = _bluesky_global_state()
     if comments:
         extra_key = comments.keys()
         for key, value in comments.items():
@@ -510,7 +526,7 @@ def get_my_scan(scan_def, scan_type, scan_time=1.0, scan_exposure_time=0.5, comm
     '''function for getting a light image
 
     Arguments:
-        scan_def - bluesky scan object - user defined scan and pass it. 
+        scan_def - bluesky scan object - user defined scan and pass it.
             Please refer to http://nsls-ii.github.io/bluesky/scans.html for syntax and further information.
         scan_type - str - scan type of user defined scan
         scan_time - float - optional. data collection time for the scan. default = 1.0 seconds
@@ -518,7 +534,7 @@ def get_my_scan(scan_def, scan_type, scan_time=1.0, scan_exposure_time=0.5, comm
             set to int(scan_time/exposure_time) (round off)
         comments - dictionary - optional. dictionary of user defined key:value pairs.
     '''
-
+    gs = _bluesky_global_state()
     if comments:
         extra_key = comments.keys()
         for key, value in comments.items():
@@ -620,6 +636,8 @@ def load_calibration(config_file = False, config_dir = False):
     config_dir - str - optional. directory where your config files are located. If not specified, default directory is used
     normal usage is not to use change these defaults.
     '''
+    gs = _bluesky_global_state()
+    from configparser import ConfigParser
     # figure out directory to read from
     if not config_dir:
         read_dir = R_DIR
@@ -684,6 +702,7 @@ def new_experimenters(experimenters):
     Argument:
         experimenters - str or list - name of current experimenters
     '''
+    gs = _bluesky_global_state()
     gs.RE.md['experimenters'] = experimenters
     print('Current experimenters is/are %s' % experimenters)
     print('To update metadata dictionary, re-run new_sample() or new_experimenters(), with desired information as the argument')
@@ -706,6 +725,7 @@ def new_sample(sample_name, composition, experimenters=[], comments={}, verbose 
     comments - dict - optional. user supplied comments that relate to the current sample. Default = ''
     verbose - bool - optional. set to false to suppress printed output.
     '''
+    gs = _bluesky_global_state()
     if verbose: print('Setting up global run engines(gs.RE) with your metadata.......')
 
     if not experimenters:
@@ -736,8 +756,13 @@ def new_sample(sample_name, composition, experimenters=[], comments={}, verbose 
             composition = []
         print('Current sample composition is %s' % composition)
     else:
-        gs.RE.md['sample']['composition']= composition
-   
+        gs.RE.md['sample']['composition'] = composition
+        print('Current sample composition is %s' % composition)
+    print('To change experimenters or sample, rerun new_user() or new_sample() respectively, with desired experimenter list as the argument')
+    
+    gs.RE.md['sample_name'] = sample_name
+    time_stub = _timestampstr(time.time())
+
     # try to set up parent layer
     try:
         gs.RE.md['sample']
@@ -748,34 +773,41 @@ def new_sample(sample_name, composition, experimenters=[], comments={}, verbose 
     gs.RE.md['sample']['composition'] = composition
     print('Current sample composition is "%s"' % composition)
     time_stub = _timestampstr(time.time())
-    gs.RE.md['sample']['sample_load_time'] = time_stub   
+    gs.RE.md['sample']['sample_load_time'] = time_stub
     if verbose: print('sample_load_time has been recorded: %s' % time_stub)
     print('To update metadata dictionary, re-run new_sample() or new_experimenters(), with desired information as the argument')
    # if verbose: print('Sample and experimenter metadata have been set')
     if verbose: print('To check what will be saved with your scans, type "gs.RE.md"')
 
 #### block of search functions ####
-def get_keys(fuzzy_key, d=gs.RE.md, verbose=0):
+def get_keys(fuzzy_key, d=None, verbose=0):
     ''' fuzzy search on key names contains in a nested dictionary.
     Return all possible key names starting with fuzzy_key
 :
     Arguments:
+
     fuzzy_key - str - possible key name, can be fuzzy like 'exp', 'sca' or nearly complete like 'experiment'
-    d - dict - dictionary you want searched for. Default is set to current metadata dictionary
+    d        -- dictionary you want to search.  Use bluesky metadata store
+                when not specified.
     '''
+    if d is None:
+        d = _bluesky_metadata_store()
     if hasattr(d,'items'):
         rv = [f for f in d.keys() if f.startswith(fuzzy_key)]
         if not verbose: print('Possible key(s) to your search is %s' % rv)
         return rv
         get_keys(fuzzy_key, d.values())
 
-def get_keychain(wanted_key, d = gs.RE.md):
+def get_keychain(wanted_key, d=None):
     ''' Return keychian(s) of specific key(s) in a nested dictionary
 
     argumets:
     wanted_key - str - name of key you want to search for
-    d - dict - dictionary you want searched for. Default is set to current metadata dictionary
+    d        -- dictionary you want to search.  Use bluesky metadata store
+                when not specified.
     '''
+    if d is None:
+        d = _bluesky_metadata_store()
     for k, v in d.items():
         if isinstance(v, dict):
             result = get_keychain(wanted_key, v) # dig in nested element
@@ -783,13 +815,18 @@ def get_keychain(wanted_key, d = gs.RE.md):
                 return [k]+ result
         elif k == wanted_key:
             return [k]
-def set_value(key, d = gs.RE.md):
+
+
+def set_value(key, d=None):
     ''' Return the last parent dictionary of key. It is convenient to set metadata value
 
     arguments:
     key - str - name of key you want to search for
-    d - dict - dictionary you want to search for. Default is set to current metadata dictionary
+    d        -- dictionary you want to search.  Use bluesky metadata store
+                when not specified.
     '''
+    if d is None:
+        d = _bluesky_metadata_store()
     keychain = get_keychain(key)
     keychain.remove(key)
     d0 = {} # copy information
@@ -810,15 +847,17 @@ def set_value(key, d = gs.RE.md):
     return out
 
 
-def build_keychain_list(key_list, d = gs.RE.md, verbose = 1):
+def build_keychain_list(key_list, d=None, verbose = 1):
     ''' Return a keychain list that yields all parent keys for every key in key_list
         E.g. d = {'layer1':{'layer2':{'mykey':'value'}}}
             build_keychain_list([layer2, mykey],d) = ['layer1', 'layer1.layer2']
     argumets:
     key_list - str or list - name of key(s) you want to search for
-    d - dict - dictionary you want searched for. Default is set to current metadata dictionary
-
+    d        -- dictionary you want to search.  Use bluesky metadata store
+                when not specified.
     '''
+    if d is None:
+        d = _bluesky_metadata_store()
     result = []
     if isinstance(key_list, str):
         key_list_operate = []
@@ -1005,6 +1044,7 @@ def time_search(startTime,stopTime=False,exp_day1=False,exp_day2=False):
 
 
 def sanity_check():
+    gs = _bluesky_global_state()
     user = gs.RE.md['experimenters']
     print('Current experimenter(s) are: %s' % user)
     try:
@@ -1016,7 +1056,7 @@ def sanity_check():
     except KeyError:
         calib_file =''
     print('Calibration file being used is %s' % calib_file)
-       
+
     try:
         compo = gs.RE.md['sample']['composition']
         print('Current sample_name is %s, composition is %s' % (sample_name, compo))
@@ -1044,12 +1084,18 @@ def print_dict(d, ident = '', braces=1):
         else:
             print (ident+'%s = %s' %(key, value))
 
-
+def _timestampstr(timestamp):
+    time= str(datetime.datetime.fromtimestamp(timestamp))
+    date = time[:10]
+    hour = time[11:16]
+    timestampstring = '_'.join([date, hour])
+    return timestampstring
 def _clean_metadata():
     '''
     reserve for completely cleaning metadata dictionary
     return nothing
     '''
+    gs = _bluesky_global_state()
     extra_key_list = [ f for f in gs.RE.md.keys() if f not in default_keys]
     for key in extra_key_list:
         del(gs.RE.md[key])
@@ -1253,7 +1299,7 @@ def save_tif(headers, tif_name = False, sum_frames = True, dark_uid=False, motor
             #else:
             #    print('Sorry, something went wrong when saving your config data. Please use write_config() function to try again')
             # very unlikely to happen but still leave it here
-       
+
 
         #fixme: write!!!
         else:
@@ -1303,9 +1349,20 @@ def run_script(script_name):
     #%run -i $m_name
 
 
+def _bluesky_global_state():
+    '''Import and return the global state from bluesky.
+    '''
+    from bluesky.standard_config import gs
+    return gs
+
+
+def _bluesky_metadata_store():
+    '''Return the dictionary of bluesky global metadata.
+    '''
+    gs = _bluesky_global_state()
+    return gs.RE.md
 # Holding place
     #print(str(check_output(['ls', '-1t', '|', 'head', '-n', '10'], shell=True)).replace('\\n', '\n'))
     #gs.RE.md.past({'field':'value'})
 #    if not sample_temperature:
 #        temp = cs700.value[1]
-
