@@ -36,7 +36,7 @@ from dataportal import get_events, get_table, get_images
 from metadatastore.commands import find_run_starts
 
 from xpdacquire.config import datapath
-
+from tifffile import *
 
 
 pd.set_option('max_colwidth',50)

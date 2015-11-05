@@ -62,7 +62,7 @@ def start_beamtime():
     from xpdacquire.xpdacquirefuncs import _MD_template
     _make_datapaths()
     _ensure_empty_datapaths()
-    # clear metadata and update from blank template
+     clear metadata and update from blank template
     _MD_template()
     _input_metadata()
     print('Everything is ready to begin.  Please continue with icollection.')
