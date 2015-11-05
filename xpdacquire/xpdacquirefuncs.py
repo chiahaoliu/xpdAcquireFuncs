@@ -47,9 +47,9 @@ feature_keys = ['sample_name','experimenters'] # required by XPD, time_stub and 
 
 # These are the default directory paths on the XPD data acquisition computer.  Change if needed here
 W_DIR = datapath.tif                # where the user-requested tif's go.  Local drive
-R_DIR = '/home/xf28id1/xpdUser/config_base'             # where the xPDFsuite generated config files go.  Local drive
-D_DIR = '/home/xf28id1/xpdUser/dark_base'               # where the tifs from dark-field collections go. Local drive
-S_DIR = '/home/xf28id1/xpdUser/script_base'             # where the user scripts go. Local drive
+R_DIR = datapath.config             # where the xPDFsuite generated config files go.  Local drive
+D_DIR = datapath.dark               # where the tifs from dark-field collections go. Local drive
+S_DIR = datapath.script             # where the user scripts go. Local drive
 
 def _feature_gen(header):
     ''' generate a human readable file name. It is made of time + uid + sample_name + user
@@ -419,14 +419,16 @@ def get_light_images(scan_time=1.0, scan_exposure_time=0.5, scan_def = False, co
         #pass
     #else:
         #sh1.open = 1
-
+    # Obtain detector name append in scan
+    det_name = scan_def.detectors[0].name # only for one detector now, could be multiple
+    img_field = '_'.join([det_neme,'image_lightfield'])
     try:
         #sh1.open = 1 # force it to open
-        scan.subs = [LiveTable(['pe1_image_lightfield']),LiveImage('pe1_image_lightfield')]
-        #gs.RE(scan)
+        scan.subs = [LiveTable([img_field]),LiveImage(img_field)]
+        gs.RE(scan)
         #header = db[-1]
         #feature = _feature_gen(header)
-        filename = _filename_gen(header)
+        #filename = _filename_gen(header)
         # let's not save every scan unless needed
         #save_tif(header, sum_frames=True)
         #deconstruct the metadata
@@ -1039,16 +1041,19 @@ def save_tif(headers, tif_name = False, sum_frames = True, dark_uid=False, motor
         except KeyError:
             pass
         # get images and exposure time from headers
+        img_field =[el for el in header.descriptors[0]['data_keys'] if el.endswith('_image_lightfield')]
         try:
-            light_imgs = np.array(get_images(header,'pe1_image_lightfield'))
+            light_imgs = np.array(get_images(header,img_field))
         except IndexError:
             uid = header.start.uid
             print('This header with uid = %s does not contain any image' % uid)
             print('Was area detector correctly mounted then?')
             print('Stop saving')
             return
+        # get events from header
         header_events = list(get_events(header))
-        cnt_time = header_events[0]['data']['pe1_acquire_time']
+        cnt_time_field = [ el for el in header_events[0]['data'] if el.endswith('acquire_time') ]
+        cnt_time = header_events[0]['data'][cnt_time_field]
             #print('scan exposure time in your header can not be found, use default 0.5 secs for dark image correction.')
             #print('Dont worry, a slightly off correction will not significantly degrade quality of your data') # fixme: comfort user??
 
@@ -1093,7 +1098,8 @@ def save_tif(headers, tif_name = False, sum_frames = True, dark_uid=False, motor
 
         print('Use dark images of uid = %s' % dark_header.start.uid)
         dark_events = list(get_events(dark_header))
-        dark_cnt_time = dark_events[0]['data']['pe1_acquire_time']
+        dark_cnt_time_field = [ el for el in dark_events[0]['data'] if el.endswith('acquire_time') ]
+        dark_cnt_time = dark_events[0]['data'][dark_cnt_time_field]
             #print('Could not find dark_exposure_time in header with uid= %s; using default 0.5 seconds now...' % dark_header.start.uid)
             #print('Dont worry, a slightly off correction will not significantly degrade quality of your data')
             #dark_cnt_time = 0.5 # default value
@@ -1133,18 +1139,16 @@ def save_tif(headers, tif_name = False, sum_frames = True, dark_uid=False, motor
 
         else: # not in summing mode but have to tell if we are dealing with motor series
             if not motor_series:
-                events = list(get_events(header))
-                for i in range(len(events)):
+                for i in range(len(header_events)):
                     if not tif_name:
                         header_uid = header.start.uid[:5]
-                        time_stub = _timestampstr(events[i]['timestamps']['pe1_image_lightfield'])
+                        time_stub =_timestampstr(events[i]['timestamps'][img_field])
                         feature = _feature_gen(header)
                         f_name ='_'.join([time_stub, header_uid, feature, '00'+str(i)+'.tif'])
                         #f_name = '_'.join([_filename_gen(header),'00'+str(i)+'.tif'])
                         #f_name = '_'.join(header_filename, '00'+str(i)+'.tif')
                     else:
                         f_name = tif_name + '_00' + str(i) +'.tif'
-                    #print(f_name)
                     w_name = os.path.join(W_DIR,f_name)
                     img = correct_imgs[i]
                     try:
@@ -1161,14 +1165,13 @@ def save_tif(headers, tif_name = False, sum_frames = True, dark_uid=False, motor
                         return
             else:
                 # require input of motor series!!!
-                events = list(get_events(header))
-                for i in range(len(events)): # length of light images should be as long as temp series
+                for i in range(len(header_events)): # length of light images should be as long as temp series
                     if not tif_name:
                         header_uid = header.start.uid[:5]
-                        time_stub = _timestampstr(events[i]['timestamps']['pe1_image_lightfield'])
+                        time_stub =_timestampstr(events[i]['timestamps'][img_field])
                         feature = _feature_gen(header)
-                        temp = str(motor_series[i])+'k'
-                        f_name ='_'.join([time_stub, header_uid, feature, temp, '00'+str(i)+'.tif'])
+                        motor_step = str(motor_series[i])
+                        f_name ='_'.join([time_stub, header_uid, feature, motor_step, '00'+str(i)+'.tif'])
                         #f_name = '_'.join([_filename_gen(header),'00'+str(i)+'.tif'])
                         #f_name = '_'.join(header_filename, '00'+str(i)+'.tif')
                     else:
