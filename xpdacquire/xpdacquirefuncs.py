@@ -1041,8 +1041,9 @@ def save_tif(headers, tif_name = False, sum_frames = True, dark_uid=False, motor
         except KeyError:
             pass
         # get images and exposure time from headers
-        img_field =[el for el in header.descriptors[0]['data_keys'] if el.endswith('_image_lightfield')]
         try:
+            img_field =[el for el in header.descriptors[0]['data_keys'] if el.endswith('_image_lightfield')][0]
+            print(img_field)
             light_imgs = np.array(get_images(header,img_field))
         except IndexError:
             uid = header.start.uid
@@ -1052,7 +1053,7 @@ def save_tif(headers, tif_name = False, sum_frames = True, dark_uid=False, motor
             return
         # get events from header
         header_events = list(get_events(header))
-        cnt_time_field = [ el for el in header_events[0]['data'] if el.endswith('acquire_time') ]
+        cnt_time_field = [ el for el in header_events[0]['data'] if el.endswith('acquire_time') ][0]
         cnt_time = header_events[0]['data'][cnt_time_field]
             #print('scan exposure time in your header can not be found, use default 0.5 secs for dark image correction.')
             #print('Dont worry, a slightly off correction will not significantly degrade quality of your data') # fixme: comfort user??
@@ -1098,7 +1099,7 @@ def save_tif(headers, tif_name = False, sum_frames = True, dark_uid=False, motor
 
         print('Use dark images of uid = %s' % dark_header.start.uid)
         dark_events = list(get_events(dark_header))
-        dark_cnt_time_field = [ el for el in dark_events[0]['data'] if el.endswith('acquire_time') ]
+        dark_cnt_time_field = [ el for el in dark_events[0]['data'] if el.endswith('acquire_time') ][0]
         dark_cnt_time = dark_events[0]['data'][dark_cnt_time_field]
             #print('Could not find dark_exposure_time in header with uid= %s; using default 0.5 seconds now...' % dark_header.start.uid)
             #print('Dont worry, a slightly off correction will not significantly degrade quality of your data')
@@ -1142,7 +1143,7 @@ def save_tif(headers, tif_name = False, sum_frames = True, dark_uid=False, motor
                 for i in range(len(header_events)):
                     if not tif_name:
                         header_uid = header.start.uid[:5]
-                        time_stub =_timestampstr(events[i]['timestamps'][img_field])
+                        time_stub =_timestampstr(header_events[i]['timestamps'][img_field])
                         feature = _feature_gen(header)
                         f_name ='_'.join([time_stub, header_uid, feature, '00'+str(i)+'.tif'])
                         #f_name = '_'.join([_filename_gen(header),'00'+str(i)+'.tif'])
@@ -1168,7 +1169,7 @@ def save_tif(headers, tif_name = False, sum_frames = True, dark_uid=False, motor
                 for i in range(len(header_events)): # length of light images should be as long as temp series
                     if not tif_name:
                         header_uid = header.start.uid[:5]
-                        time_stub =_timestampstr(events[i]['timestamps'][img_field])
+                        time_stub =_timestampstr(header_events[i]['timestamps'][img_field])
                         feature = _feature_gen(header)
                         motor_step = str(motor_series[i])
                         f_name ='_'.join([time_stub, header_uid, feature, motor_step, '00'+str(i)+'.tif'])
