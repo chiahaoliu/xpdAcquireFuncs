@@ -58,7 +58,6 @@ def _bluesky_global_state():
     from bluesky.standard_config import gs
     return gs
 
-
 def _bluesky_metadata_store():
     '''Return the dictionary of bluesky global metadata.
     '''
@@ -89,11 +88,19 @@ def _bluesky_cs700():
             stop_val=13, put_complete=True, name='cs700')
     return cs700
 
+def _bluesky_sh1():
+    from xpdacquire.shutter import sh1 
+    #sh1 = Nsls2Shutter(open='XF:28IDC-ES:1{Sh:Exp}Cmd:Opn-Cmd', open_status='XF:28IDC-ES:1{Sh:Exp}Sw:Opn1-Sts', close='XF:28IDC-ES:1{Sh:Exp}Cmd:Cls-Cmd', close_status='XF:28IDC-ES:1{Sh:Exp}Sw:Cls1-Sts')
+    return sh1
+
+
+
 gs = _bluesky_global_state()
 RE = _bluesky_RE()
 pe1 = _bluesky_pe1()
 cs700 = _bluesky_cs700()
-
+sh1 = _bluesky_sh1()
+gs.TEMP_CONTROLLER = cs700
 
 def _feature_gen(header):
     ''' generate a human readable file name. It is made of time + uid + sample_name + user
@@ -982,7 +989,7 @@ def save_tif(headers, tif_name = False, sum_frames = True, dark_uid=False):
         # get images and exposure time from headers
         try:
             img_field =[el for el in header.descriptors[0]['data_keys'] if el.endswith('_image_lightfield')][0]
-            print('Detector image field is %s' % img_field)
+            print('Images are pulling out from %s' % img_field)
             light_imgs = np.array(get_images(header,img_field))
         except IndexError:
             uid = header.start.uid
@@ -1092,7 +1099,7 @@ def save_tif(headers, tif_name = False, sum_frames = True, dark_uid=False):
                         f_name = tif_name + '_00' + str(i) +'.tif'
                     w_name = os.path.join(W_DIR,f_name)
                     img = correct_imgs[i]
-                    if len(correct_imgs) <10:
+                    if len(correct_imgs) <5:
                         try:
                             fig = plt.figure(f_name)
                             plt.imshow(img)
@@ -1100,6 +1107,8 @@ def save_tif(headers, tif_name = False, sum_frames = True, dark_uid=False):
                         except TypeError:
                             pass
                     else:
+                        #print('There are more than 5 images in this header, will not plot now for saving computation resource/')
+                        #print('You can view these images after they are saved')
                         pass
                     imsave(w_name, img) # overwrite mode now !!!!
                     if os.path.isfile(w_name):
@@ -1127,7 +1136,7 @@ def save_tif(headers, tif_name = False, sum_frames = True, dark_uid=False):
                         f_name ='_'.join([tif_name, motor_step, '00'+str(i)+'.tif'])
                     w_name = os.path.join(W_DIR,f_name)
                     img = correct_imgs[i]
-                    if len(correct_imgs)<10:
+                    if len(correct_imgs)<5:
                         try:
                             fig = plt.figure(f_name)
                             plt.imshow(img)
@@ -1135,6 +1144,8 @@ def save_tif(headers, tif_name = False, sum_frames = True, dark_uid=False):
                         except TypeError:
                             pass
                     else:
+                        #print('There are more than 5 images in this header, will not plot now for saving computation resource/')
+                        #print('You can view these images after they are saved')
                         pass
                     imsave(w_name, img) # overwrite mode now !!!!
                     if os.path.isfile(w_name):
