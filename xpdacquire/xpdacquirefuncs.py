@@ -88,7 +88,9 @@ def _timestampstr(timestamp):
     date = time[:10]
     hour = time[11:16]
     timestampstring = '_'.join([date,hour])
-    return timestampstring
+    corrected_timestampstring = timestampstring.replace(':','-')
+
+    return corrected_timestampstring
 
 def _MD_template():
     ''' use to generate idealized metadata structure, for pictorial memory and
@@ -442,94 +444,7 @@ def get_light_images(scan_time=1.0, scan_exposure_time=0.5, scan_def = False, co
         gs.RE.md['sample']['temperature'] = temp_hold
         print('image collection failed. Check why gs.RE(scan) is not working and rerun')
         return
-'''
-def get_temp_scan(start_temperature, final_temperature, temperature_step, scan_exposure_time=0.5, comments={}):
-    Running a temperature delta scan and save dark-corrected file
 
-    Arguments:
-        start_temperature - float - starting temperature
-        final_temperature - float - final temperature
-        temperature_step - int - step size of your temeprature scan.
-        scan_exposure_time - float - optional. exposure time per frame, default value is 0.5 s
-        comments - dictionary - optional. dictionary of user defined key:value pairs.
-
-    gs = _bluesky_global_state()
-    RE = _bluesky_RE()
-    pe1 = _bluesky_pe1()
-    cs700 = _bluesky_cs700()
-    if comments:
-        extra_key = comments.keys()
-        for key, value in comments.items():
-            gs.RE.md['user_supply'][key] = value
-    # test if even parents layers exitst
-    try:
-        gs.RE.md['scan_info']
-        gs.RE.md['sample']
-    except KeyError:
-        gs.RE.md['scan_info']={}
-        gs.RE.md['sample'] = {}
-    # Prepare hold values, KeyError means blanck state, just pass it
-    try:
-        scan_type_hold = copy.copy(gs.RE.md['scan_info']['scan_type'])
-    except KeyError:
-        scan_type_hold = ''
-        pass
-    try:
-        scan_exposure_time_hold = copy.copy(gs.RE.md['scan_info']['scan_exposure_time'])
-    except KeyError:
-        scan_exposure_time_hold = ''
-        pass
-    try:
-        scan_steps_hold = gs.RE.md['scan_info']['number_of_exposures']
-    except KeyError:
-        scan_steps_hold = ''
-        pass
-    try:
-        total_scan_duration_hold = gs.RE.md['scan_info']['total_scan_duration']
-    except KeyError:
-        total_scan_duration_hold = ''
-        pass
-
-    # don't expose the PE for more than 5 seconds max, set it to 1 seconds if you go beyond limit
-    if scan_exposure_time > 5.0:
-        print('Your exposure time is larger than 5 seconds. This can damage detector')
-        print('Exposure time is set to 4 seconds')
-        scan_exposure_time = 4.0
-    if temperature_step == 0: temperature_step==1 # at least one scan
-    scan_steps = int((final_temperature - start_temperature)/temperature_step)
-
-    try:
-    # assign values from current scan
-        scan_cnt_time_hold = copy.copy(pe1.acquire_time)
-        pe1.acquisition_time = scan_exposure_time
-        gs.RE.md['scan_info']['scan_exposure_time'] = scan_exposure_time
-        gs.RE.md['scan_info']['number_of_exposures'] = scan_steps
-        gs.RE.md['scan_info']['total_scan_duration'] = scan_steps*scan_exposure_time
-        gs.RE.md['scan_info']['scan_type'] = 'temp_scan'
-
-        # fixme: code to check the filter/shutter is open
-        #tscan = bluesky.scans.DeltaScan(cs700, [pe1], start_temperature, final_temperature, scan_steps)
-        tscan = bluesky.scans.AbsScan( [pe1], cs700, start_temperature, final_temperature, scan_steps)
-        tscan.subs = [LiveTable(['pe1_image_lightfield']),LiveImage('pe1_image_lightfield')]
-
-        gs.RE(tscan)
-        header = db[-1]
-        #feature = _feature_gen(header)
-        filename = _filename_gen(header)
-        temps = get_motor(header,'cs700')
-        save_tif(header, sum_frames = False, motor_series=temps)
-    # note, do not close the shutter again afterwards, we will do it manually outside of this function
-
-    # deconstruct the metadata
-        gs.RE.md['scan_info'] ={'scan_exposure_time': scan_exposure_time_hold,'number_of_exposures': scan_steps_hold,'total_scan_duration': total_scan_duration_hold, 'scan_type': scan_type_hold}
-        gs.RE.md['user_supplied'] = {}
-    except:
-        # deconstruct the metadata
-        gs.RE.md['scan_info'] ={'scan_exposure_time': scan_exposure_time_hold,'number_of_exposures': scan_steps_hold,'total_scan_duration': total_scan_duration_hold, 'scan_type': scan_type_hold}
-        gs.RE.md['user_supplied'] = {}
-        print('image collection failed. Check why gs.RE(scan) is not working and rerun')
-        return
-'''
 
 def load_calibration(config_file = False, config_dir = False):
     '''Function loads calibration values as metadata to save with scans
@@ -1016,7 +931,7 @@ def _clean_metadata():
         del(gs.RE.md[key])
     gs.RE.md['sample'] = {}
 
-def save_tif(headers, tif_name = False, sum_frames = True, dark_uid=False, motor_series = False):
+def save_tif(headers, tif_name = False, sum_frames = True, dark_uid=False):
     ''' save images obtained from dataBroker as tiff format files. It returns nothing.
 
     arguments:
@@ -1024,9 +939,8 @@ def save_tif(headers, tif_name = False, sum_frames = True, dark_uid=False, motor
         file_name - str - optional. File name of tif file being saved. default setting yields a name made of time, uid, feature of your header
         sum_frames - bool - optional. when it is set to True, image frames contained in header will be summed as one file
         dark_uid - str - optional. The uid of dark_image you wish to use. If unspecified, the most recent dark stack in dark_base will beused.
-        motor_series -list - optional. series of motor values. Use it when doing motor scan, like temperature scan, tth_scan or so.
-
     '''
+    # prepare header
     if type(list(headers)[1]) == str:
         header_list = list()
         header_list.append(headers)
@@ -1036,14 +950,10 @@ def save_tif(headers, tif_name = False, sum_frames = True, dark_uid=False, motor
     # iterate over header(s)
     for header in header_list:
         print('Plotting and saving your dark-corrected image(s) now....')
-        try:
-            comment = header.start['comments']
-        except KeyError:
-            pass
         # get images and exposure time from headers
         try:
             img_field =[el for el in header.descriptors[0]['data_keys'] if el.endswith('_image_lightfield')][0]
-            print(img_field)
+            print('Detector image field is %s' % img_field)
             light_imgs = np.array(get_images(header,img_field))
         except IndexError:
             uid = header.start.uid
@@ -1051,25 +961,13 @@ def save_tif(headers, tif_name = False, sum_frames = True, dark_uid=False, motor
             print('Was area detector correctly mounted then?')
             print('Stop saving')
             return
+            
         # get events from header
         header_events = list(get_events(header))
         cnt_time_field = [ el for el in header_events[0]['data'] if el.endswith('acquire_time') ][0]
         cnt_time = header_events[0]['data'][cnt_time_field]
-            #print('scan exposure time in your header can not be found, use default 0.5 secs for dark image correction.')
-            #print('Dont worry, a slightly off correction will not significantly degrade quality of your data') # fixme: comfort user??
-
+        
         # Identify the latest dark stack
-        '''dummy = [ f for f in os.listdir(D_DIR) ]
-        d_list = list()
-        for el in dummy:
-            d_list.append(os.path.join(D_DIR, el))
-        sorted(d_list, key = os.path.getmtime)
-        d_last = d_list[-1]
-        d_last_uid = dummy[:5]
-        #d_last_uid = dark_last[17:22] ... for future use if f_name = (time_stub)_uid_feature
-        print(d_last_uid)
-        d_header = db[d_last_uid]
-        '''
         if not dark_uid:
             try:
                 LAST_DARK_UID # see if LAST_DARK_UID global variable exits
@@ -1082,6 +980,16 @@ def save_tif(headers, tif_name = False, sum_frames = True, dark_uid=False, motor
                 print('You do not have any dark image in dark_base, please at least do one dark scan before all scans')
             else:
                 pass
+            '''dummy = [ f for f in os.listdir(D_DIR) ]
+            dark_header_list = list()
+            for el in dummy:
+                dark_header_list.append(os.path.join(D_DIR, el))
+            sorted(dark_header_list, key = os.path.getmtime)
+            dark_header_last = dark_header_list[-1]
+            dark_header_uid = dark_header_last[17:22]
+            print('Use dark images from header with uid= %s' % dark_header_uid)
+            dark_header = db[dark_header_uid]'''
+
             uid_list = []
             for f in f_d:
                 uid_list.append(f[17:22])
@@ -1097,22 +1005,25 @@ def save_tif(headers, tif_name = False, sum_frames = True, dark_uid=False, motor
         else:
             dark_header = db[str(dark_uid)]
 
-        print('Use dark images of uid = %s' % dark_header.start.uid)
         dark_events = list(get_events(dark_header))
         dark_cnt_time_field = [ el for el in dark_events[0]['data'] if el.endswith('acquire_time') ][0]
         dark_cnt_time = dark_events[0]['data'][dark_cnt_time_field]
-            #print('Could not find dark_exposure_time in header with uid= %s; using default 0.5 seconds now...' % dark_header.start.uid)
-            #print('Dont worry, a slightly off correction will not significantly degrade quality of your data')
-            #dark_cnt_time = 0.5 # default value
 
         # dark correction
-        dark_num = int(np.round(cnt_time / dark_cnt_time)) # how many dark frames needed for single light image
+        dark_num = int(cnt_time / dark_cnt_time) # how many dark frames needed for single light image
         print('Number of dark images applied to correction your image(s) is: %i....' % dark_num)
-        dark_img_list = np.array(get_images(dark_header,'pe1_image_lightfield')) # confirmed that it comes with reverse order
+        dark_img_field =[el for el in dark_header.descriptors[0]['data_keys'] if el.endswith('_image_lightfield')][0]
+        dark_img_list = np.array(get_images(dark_header,dark_img_field)) # confirmed that it comes with reverse order
         dark_len = dark_img_list.shape[0]
         correct_imgs = []
         for i in range(light_imgs.shape[0]):
             correct_imgs.append(light_imgs[i]-np.sum(dark_img_list[dark_len-dark_num:dark_len],0)) # use last d_num dark images
+
+        scan_type = header.start.scan_type
+        if scan_type != 'Count':
+            sum_frames = False
+        else:
+            pass
 
         if sum_frames:
             if not tif_name:
@@ -1138,8 +1049,8 @@ def save_tif(headers, tif_name = False, sum_frames = True, dark_uid=False, motor
                 print('Sorry, something went wrong with your tif saving')
                 return
 
-        else: # not in summing mode but have to tell if we are dealing with motor series
-            if not motor_series:
+        else:
+            if scan_type == 'Count':  #fixme: is Count the only one doesn't move motor?
                 for i in range(len(header_events)):
                     if not tif_name:
                         header_uid = header.start.uid[:5]
@@ -1164,8 +1075,13 @@ def save_tif(headers, tif_name = False, sum_frames = True, dark_uid=False, motor
                     else:
                         print('Sorry, something went wrong with your tif saving')
                         return
+
+
             else:
-                # require input of motor series!!!
+                print('This is a motor scan, frames will be saved seperately..')
+                # is a motor scan now, get motor name
+                motor_name = eval(header.start.motor).name
+                motor_series = get_motor(header,motor_name)
                 for i in range(len(header_events)): # length of light images should be as long as temp series
                     if not tif_name:
                         header_uid = header.start.uid[:5]
@@ -1176,8 +1092,7 @@ def save_tif(headers, tif_name = False, sum_frames = True, dark_uid=False, motor
                         #f_name = '_'.join([_filename_gen(header),'00'+str(i)+'.tif'])
                         #f_name = '_'.join(header_filename, '00'+str(i)+'.tif')
                     else:
-                        f_name ='_'.join([tif_name, '00'+str(i)+'.tif'])
-                    #print(f_name)
+                        f_name ='_'.join([tif_name, motor_step, '00'+str(i)+'.tif'])
                     w_name = os.path.join(W_DIR,f_name)
                     img = correct_imgs[i]
                     try:
@@ -1230,17 +1145,17 @@ def save_tif(headers, tif_name = False, sum_frames = True, dark_uid=False, motor
             #return
         '''
 
-
 def get_motor(header, motor_name):
     ''' Return motor serises in a header
     argument:
     header - obj - a blusky header object
     motor_name - str - name of motor in your scan
     '''
-    img_len = np.array(get_images(header,'pe1_image_lightfield')).shape[0]
+    img_field =[el for el in header.descriptors[0]['data_keys'] if el.endswith('_image_lightfield')][0]
+    img_len = np.array(get_images(header,img_field)).shape[0]
     events = list(get_events(header))
     motor_len = len(events)
-    if img_len == temp_len:
+    if img_len == motor_len:
         pass
     else:
         print('Something went wrong. Number of images you collected is not equal to the number of motor steps')
@@ -1249,7 +1164,7 @@ def get_motor(header, motor_name):
     try:
         motor_series = list()
         for event in events:
-            motor_step = event['data'][motor]
+            motor_step = event['data'][motor_name]
             motor_series.append(motor_step)
         return motor_series
     except KeyError:
