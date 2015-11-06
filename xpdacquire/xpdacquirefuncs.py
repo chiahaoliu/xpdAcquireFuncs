@@ -51,6 +51,50 @@ R_DIR = datapath.config             # where the xPDFsuite generated config files
 D_DIR = datapath.dark               # where the tifs from dark-field collections go. Local drive
 S_DIR = datapath.script             # where the user scripts go. Local drive
 
+# Instanciate bluesky objects
+def _bluesky_global_state():
+    '''Import and return the global state from bluesky.
+    '''
+    from bluesky.standard_config import gs
+    return gs
+
+
+def _bluesky_metadata_store():
+    '''Return the dictionary of bluesky global metadata.
+    '''
+    gs = _bluesky_global_state()
+    return gs.RE.md
+
+def _bluesky_pe1():
+    from ophyd.controls.area_detector import (AreaDetectorFileStoreHDF5, AreaDetectorFileStoreTIFF,AreaDetectorFileStoreTIFFSquashing)
+    # from shutter import sh1
+    #shctl1 = EpicsSignal('XF:28IDC-ES:1{Det:PE1}cam1:ShutterMode', name='shctl1')
+    shctl1 = EpicsSignal('XF:28IDC-ES:1{Sh:Exp}Cmd-Cmd', name='shctl1')
+    pe1 = AreaDetectorFileStoreTIFFSquashing('XF:28IDC-ES:1{Det:PE1}',name='pe1',stats=[], ioc_file_path = 'H:/pe1_data',file_path ='/home/xf28id1/pe1_data')#shutter=shctl1, #shutter_val=(1, 0))
+    return pe1
+
+def _bluesky_RE():
+    import bluesky
+    from bluesky.run_engine import RunEngine
+    from bluesky.run_engine import DocumentNames
+    RE = RunEngine()
+    bluesky.register_mds.register_mds(RE)
+    return RE
+
+def _bluesky_cs700():
+    from ophyd.controls import EpicsMotor, PVPositioner
+    cs700 = PVPositioner('XF:28IDC-ES:1{Env:01}T-SP', readback='XF:28IDC-ES:1{Env:01}T-I',
+            #done='XF:28IDC-ES:1{Env:01}Cmd-Busy',
+            done_val=0, stop='XF:28IDC-ES:1{Env:01}Cmd-Cmd', 
+            stop_val=13, put_complete=True, name='cs700')
+    return cs700
+
+gs = _bluesky_global_state()
+RE = _bluesky_RE()
+pe1 = _bluesky_pe1()
+cs700 = _bluesky_cs700()
+
+
 def _feature_gen(header):
     ''' generate a human readable file name. It is made of time + uid + sample_name + user
 
@@ -89,14 +133,13 @@ def _timestampstr(timestamp):
     hour = time[11:16]
     timestampstring = '_'.join([date,hour])
     corrected_timestampstring = timestampstring.replace(':','-')
-
     return corrected_timestampstring
 
 def _MD_template():
     ''' use to generate idealized metadata structure, for pictorial memory and
     also for data cleaning.
     '''
-    gs = _bluesky_global_state()
+    #gs = _bluesky_global_state()
     _clean_metadata()
     gs.RE.md['iscalib'] = 0
     gs.RE.md['isdark'] = 0
@@ -122,7 +165,7 @@ def _MD_template():
 def scan_info():
     ''' hard coded scan information. Aiming for our standardized metadata
     dictionary'''
-    gs = _bluesky_global_state()
+    #gs = _bluesky_global_state()
     all_scan_info = []
     try:
         all_scan_info.append(gs.RE.md['scan_info']['scan_exposure_time'])
@@ -138,20 +181,6 @@ def scan_info():
         all_scan_info.append('')
     print('scan exposure time is %s, calibration exposure time is %s, dark scan exposure time is %s' % (all_scan_info[0], all_scan_info[1], all_scan_info[2]))
 
-def meta_gen(fields, values):
-    '''generate metadata dictionary used in your run engines
-
-        arguments:
-        fields - list of strings - user defined metadata fields that will be dictionary keys
-        values - list of strings - key values metadata values corresponding to fields your defined.
-
-    returns:
-        dictionary of fields and values
-    '''
-    metadata_dict = {}
-    for i in range(len(fields)):
-        metadata_dict[fields[i]] = values[i]
-    return metadata_dict
 
 def _dig_dict(d):
     '''completely unpack a nested dictionary'''
@@ -207,9 +236,9 @@ def get_dark_images(num=300, dark_scan_exposure_time=0.2):
        cnt_time - float - Optional. exposure time for each frame. Default = 0.2
     '''
     # set up scan
-    gs = _bluesky_global_state()
-    RE = _bluesky_RE()
-    pe1 = _bluesky_pe1()
+    #gs = _bluesky_global_state()
+    #RE = _bluesky_RE()
+    #pe1 = _bluesky_pe1()
     gs.RE.md['isdark'] = True
     dark_cnt_hold = copy.copy(pe1.acquire_time)
     pe1.acquire_time = dark_scan_exposure_time
@@ -267,9 +296,9 @@ def get_calibration_images (calibrant, wavelength, calibration_scan_exposure_tim
         **kwargs - dictionary - User specified info about the calibration. Only use it to add information about the calibration
             It gets stored in the 'user_supplied' dictionary.
     '''
-    gs = _bluesky_global_state()
-    pe1 = _bluesky_pe1()
-    RE = _bluesky_RE()
+    #gs = _bluesky_global_state()
+    #pe1 = _bluesky_pe1()
+    #RE = _bluesky_RE()
     # Prepare hold state
     try:
         composition_hold = copy.copy(gs.RE.md['sample']['composition']) #as sample dictionary contains all information
@@ -351,10 +380,10 @@ def get_light_images(scan_time=1.0, scan_exposure_time=0.5, scan_def = False, co
         comments - dictionary - optional. dictionary of user defined key:value pairs.
         scan_def - object - optional. bluesky scan object defined by user. Default is a count scan
     '''
-    gs = _bluesky_global_state()
-    RE = _bluesky_RE()
-    pe1 = _bluesky_pe1()
-    cs700 = _bluesky_cs700()
+    #gs = _bluesky_global_state()
+    #RE = _bluesky_RE()
+    #pe1 = _bluesky_pe1()
+    #cs700 = _bluesky_cs700()
     if comments:
         extra_key = comments.keys()
         for key, value in comments.items():
@@ -464,7 +493,7 @@ def load_calibration(config_file = False, config_dir = False):
     config_dir - str - optional. directory where your config files are located. If not specified, default directory is used
     normal usage is not to use change these defaults.
     '''
-    gs = _bluesky_global_state()
+    #gs = _bluesky_global_state()
     from configparser import ConfigParser
     # figure out directory to read from
     if not config_dir:
@@ -530,7 +559,7 @@ def new_experimenters(experimenters):
     Argument:
         experimenters - str or list - name of current experimenters
     '''
-    gs = _bluesky_global_state()
+    #gs = _bluesky_global_state()
     gs.RE.md['experimenters'] = experimenters
     print('Current experimenters is/are %s' % experimenters)
     print('To update metadata dictionary, re-run new_sample() or new_experimenters(), with desired information as the argument')
@@ -555,7 +584,7 @@ def new_sample(sample_name, composition, experimenters=[], comments={}, verbose 
     comments - dict - optional. user supplied comments that relate to the current sample. Default = ""
     verbose - bool - optional. set to false to suppress printed output.
     '''
-    gs = _bluesky_global_state()
+    #gs = _bluesky_global_state()
     if verbose: print('Setting up global run engines(gs.RE) with your metadata.......')
 
     if not experimenters:
@@ -874,7 +903,7 @@ def time_search(startTime,stopTime=False,exp_day1=False,exp_day2=False):
 
 
 def sanity_check():
-    gs = _bluesky_global_state()
+    #gs = _bluesky_global_state()
     user = gs.RE.md['experimenters']
     print('Current experimenter(s) are: %s' % user)
     try:
@@ -925,7 +954,7 @@ def _clean_metadata():
     reserve for completely cleaning metadata dictionary
     return nothing
     '''
-    gs = _bluesky_global_state()
+    #gs = _bluesky_global_state()
     extra_key_list = [ f for f in gs.RE.md.keys() if f not in default_keys]
     for key in extra_key_list:
         del(gs.RE.md[key])
@@ -1063,11 +1092,14 @@ def save_tif(headers, tif_name = False, sum_frames = True, dark_uid=False):
                         f_name = tif_name + '_00' + str(i) +'.tif'
                     w_name = os.path.join(W_DIR,f_name)
                     img = correct_imgs[i]
-                    try:
-                        fig = plt.figure(f_name)
-                        plt.imshow(img)
-                        plt.show()
-                    except TypeError:
+                    if len(correct_imgs) <10:
+                        try:
+                            fig = plt.figure(f_name)
+                            plt.imshow(img)
+                            plt.show()
+                        except TypeError:
+                            pass
+                    else:
                         pass
                     imsave(w_name, img) # overwrite mode now !!!!
                     if os.path.isfile(w_name):
@@ -1095,11 +1127,14 @@ def save_tif(headers, tif_name = False, sum_frames = True, dark_uid=False):
                         f_name ='_'.join([tif_name, motor_step, '00'+str(i)+'.tif'])
                     w_name = os.path.join(W_DIR,f_name)
                     img = correct_imgs[i]
-                    try:
-                        fig = plt.figure(f_name)
-                        plt.imshow(img)
-                        plt.show()
-                    except TypeError:
+                    if len(correct_imgs)<10:
+                        try:
+                            fig = plt.figure(f_name)
+                            plt.imshow(img)
+                            plt.show()
+                        except TypeError:
+                            pass
+                    else:
                         pass
                     imsave(w_name, img) # overwrite mode now !!!!
                     if os.path.isfile(w_name):
@@ -1182,42 +1217,6 @@ def run_script(script_name):
     #%run -i $m_name
 
 
-def _bluesky_global_state():
-    '''Import and return the global state from bluesky.
-    '''
-    from bluesky.standard_config import gs
-    return gs
-
-
-def _bluesky_metadata_store():
-    '''Return the dictionary of bluesky global metadata.
-    '''
-    gs = _bluesky_global_state()
-    return gs.RE.md
-
-def _bluesky_pe1():
-    from ophyd.controls.area_detector import (AreaDetectorFileStoreHDF5, AreaDetectorFileStoreTIFF,AreaDetectorFileStoreTIFFSquashing)
-    # from shutter import sh1
-    #shctl1 = EpicsSignal('XF:28IDC-ES:1{Det:PE1}cam1:ShutterMode', name='shctl1')
-    shctl1 = EpicsSignal('XF:28IDC-ES:1{Sh:Exp}Cmd-Cmd', name='shctl1')
-    pe1 = AreaDetectorFileStoreTIFFSquashing('XF:28IDC-ES:1{Det:PE1}',name='pe1',stats=[], ioc_file_path = 'H:/pe1_data',file_path ='/home/xf28id1/pe1_data')#shutter=shctl1, #shutter_val=(1, 0))
-    return pe1
-
-def _bluesky_RE():
-    import bluesky
-    from bluesky.run_engine import RunEngine
-    from bluesky.run_engine import DocumentNames
-    RE = RunEngine()
-    bluesky.register_mds.register_mds(RE)
-    return RE
-
-def _bluesky_cs700():
-    from ophyd.controls import EpicsMotor, PVPositioner
-    cs700 = PVPositioner('XF:28IDC-ES:1{Env:01}T-SP', readback='XF:28IDC-ES:1{Env:01}T-I',
-            #done='XF:28IDC-ES:1{Env:01}Cmd-Busy',
-            done_val=0, stop='XF:28IDC-ES:1{Env:01}Cmd-Cmd', 
-            stop_val=13, put_complete=True, name='cs700')
-    return cs700
 
 # Holding place
     #print(str(check_output(['ls', '-1t', '|', 'head', '-n', '10'], shell=True)).replace('\\n', '\n'))
