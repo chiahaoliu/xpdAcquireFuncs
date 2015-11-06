@@ -36,6 +36,7 @@ from dataportal import get_events, get_table, get_images
 from metadatastore.commands import find_run_starts
 
 from xpdacquire.config import datapath
+from xpdacquire.utils import composition_analysis
 from tifffile import *
 
 
@@ -52,25 +53,6 @@ D_DIR = datapath.dark               # where the tifs from dark-field collections
 S_DIR = datapath.script             # where the user scripts go. Local drive
 
 # Instanciate bluesky objects
-def _bluesky_global_state():
-    '''Import and return the global state from bluesky.
-    '''
-    from bluesky.standard_config import gs
-    return gs
-
-def _bluesky_metadata_store():
-    '''Return the dictionary of bluesky global metadata.
-    '''
-    gs = _bluesky_global_state()
-    return gs.RE.md
-
-def _bluesky_pe1():
-    from ophyd.controls.area_detector import (AreaDetectorFileStoreHDF5, AreaDetectorFileStoreTIFF,AreaDetectorFileStoreTIFFSquashing)
-    # from shutter import sh1
-    #shctl1 = EpicsSignal('XF:28IDC-ES:1{Det:PE1}cam1:ShutterMode', name='shctl1')
-    shctl1 = EpicsSignal('XF:28IDC-ES:1{Sh:Exp}Cmd-Cmd', name='shctl1')
-    pe1 = AreaDetectorFileStoreTIFFSquashing('XF:28IDC-ES:1{Det:PE1}',name='pe1',stats=[], ioc_file_path = 'H:/pe1_data',file_path ='/home/xf28id1/pe1_data')#shutter=shctl1, #shutter_val=(1, 0))
-    return pe1
 
 def _bluesky_RE():
     import bluesky
@@ -80,27 +62,14 @@ def _bluesky_RE():
     bluesky.register_mds.register_mds(RE)
     return RE
 
-def _bluesky_cs700():
-    from ophyd.controls import EpicsMotor, PVPositioner
-    cs700 = PVPositioner('XF:28IDC-ES:1{Env:01}T-SP', readback='XF:28IDC-ES:1{Env:01}T-I',
-            #done='XF:28IDC-ES:1{Env:01}Cmd-Busy',
-            done_val=0, stop='XF:28IDC-ES:1{Env:01}Cmd-Cmd', 
-            stop_val=13, put_complete=True, name='cs700')
-    return cs700
-
-def _bluesky_sh1():
-    from xpdacquire.shutter import sh1 
-    #sh1 = Nsls2Shutter(open='XF:28IDC-ES:1{Sh:Exp}Cmd:Opn-Cmd', open_status='XF:28IDC-ES:1{Sh:Exp}Sw:Opn1-Sts', close='XF:28IDC-ES:1{Sh:Exp}Cmd:Cls-Cmd', close_status='XF:28IDC-ES:1{Sh:Exp}Sw:Cls1-Sts')
-    return sh1
-
-
-
-gs = _bluesky_global_state()
+ipshell = get_ipython()
+gs = ipshell.user_ns['gs']
 RE = _bluesky_RE()
-pe1 = _bluesky_pe1()
-cs700 = _bluesky_cs700()
-sh1 = _bluesky_sh1()
+pe1 = ipshell.user_ns['pe1']
+cs700 = ipshell.user_ns['cs700']
+sh1 = ipshell.user_ns['sh1']
 gs.TEMP_CONTROLLER = cs700
+
 
 def _feature_gen(header):
     ''' generate a human readable file name. It is made of time + uid + sample_name + user
@@ -138,9 +107,10 @@ def _timestampstr(timestamp):
     time = str(datetime.datetime.fromtimestamp(timestamp))
     date = time[:10]
     hour = time[11:16]
+    m_hour = hour.replace(':','-')
     timestampstring = '_'.join([date,hour])
-    corrected_timestampstring = timestampstring.replace(':','-')
-    return corrected_timestampstring
+    #corrected_timestampstring = timestampstring.replace(':','-')
+    return timestampstring
 
 def _MD_template():
     ''' use to generate idealized metadata structure, for pictorial memory and
@@ -403,11 +373,11 @@ def get_light_images(scan_time=1.0, scan_exposure_time=0.5, scan_def = False, co
         gs.RE.md['scan_info']={}
         gs.RE.md['sample'] = {}
     # Prpare hold values, KeyError means blanck state, just pass it
-    try:
-        scan_type_hold = copy.copy(gs.RE.md['scan_info']['scan_type'])
-    except KeyError:
-        scan_type_hold =''
-        pass
+    #try:
+        #scan_type_hold = copy.copy(gs.RE.md['scan_info']['scan_type'])
+    #except KeyError:
+        #scan_type_hold =''
+        #pass
     try:
         scan_steps_hold = gs.RE.md['scan_info']['number_of_exposures']
     except KeyError:
@@ -449,7 +419,7 @@ def get_light_images(scan_time=1.0, scan_exposure_time=0.5, scan_def = False, co
     gs.RE.md['scan_info']['scan_exposure_time'] = scan_exposure_time
     gs.RE.md['scan_info']['number_of_exposures'] = num
     gs.RE.md['scan_info']['total_scan_duration'] = num*scan_exposure_time
-    gs.RE.md['scan_info']['scan_type'] = scan_type
+    #gs.RE.md['scan_info']['scan_type'] = scan_type
     gs.RE.md['sample']['temp'] = str(cs700.value[1])+'k'
 
     #shutter status
@@ -475,7 +445,7 @@ def get_light_images(scan_time=1.0, scan_exposure_time=0.5, scan_def = False, co
         #gs.RE.md['sample']['temperature'] = temp_hold
     except:
         # deconstruct the metadata
-        gs.RE.md['scan_info'] = {'scan_exposure_time' : scan_exposure_time_hold,'number_of_exposures' : scan_steps_hold, 'total_scan_duration' : total_scan_duration_hold, 'scan_type' : scan_type_hold}
+        gs.RE.md['scan_info'] = {'scan_exposure_time' : scan_exposure_time_hold,'number_of_exposures' : scan_steps_hold, 'total_scan_duration' : total_scan_duration_hold }
         gs.RE.md['user_supply'] = {}
         gs.RE.md['sample']['temperature'] = temp_hold
         print('image collection failed. Check why gs.RE(scan) is not working and rerun')
@@ -569,10 +539,32 @@ def new_experimenters(experimenters):
     #gs = _bluesky_global_state()
     gs.RE.md['experimenters'] = experimenters
     print('Current experimenters is/are %s' % experimenters)
-    print('To update metadata dictionary, re-run new_sample() or new_experimenters(), with desired information as the argument')
+    print('To update metadata dictionary, rerun new_sample() or new_experimenters(), with desired information as the argument')
+
+def composition_dict_gen(sample):
+    '''generate composition dictionary with desired form
+
+    argument:
+    sample_name - tuple - if it is a mixture, give a tuple following corresponding amounts. For example, ('NaCl',1,'Al2O3',2)
+    '''
+    sample_list = [ el for el in sample if isinstance(el,str)]
+    amount_list = [ amt for amt in sample if isinstance(amt, float) or isinstance(amt, int)]
+    compo_dict_list = []
+    for i in range(len(sample_list)):
+        compo_dict = {}
+        compo_dict['phase_name'] = sample_list[i]
+        compo_analysis_dict = {}
+        (e,a) = composition_analysis(sample_list[i])
+        for j in range(len(e)):
+            compo_analysis_dict[e[j]] = a[j]
+        compo_dict['element_info'] = compo_analysis_dict
+        compo_dict['phase_amount'] = amount_list[i]
+        
+        compo_dict_list.append(compo_dict)
+    return compo_dict_list
 
 
-def new_sample(sample_name, composition, experimenters=[], comments={}, verbose = 1):
+def new_sample(sample, experimenters=[], comments={}, verbose = 1):
     '''set up metadata fields for your runengine
 
     This function sets up persistent metadata that will be saved with subsequent scans,
@@ -582,11 +574,8 @@ def new_sample(sample_name, composition, experimenters=[], comments={}, verbose 
 
     Arguments:
 
-    sample_name - str - sample name, for example, "dppa2" or "Al2O3"
-    composition - list - chemical composition of your sample, described by phases and elements.
-        For example, [{"phase_name":"NaCl","phase_amt":1.0,{"Na":1.0,"Cl":1.0}},
-        {"phase_name":"Al2O3","phase_amt":2.0,{"Al":2.,"O":3.}}] for a 1:2 mix of NaCl and Al2O3.
-        Correctly composed composition fields will allow automated data reduction and model setup in XPDsuite.
+    sample - tuple- a tuple including sample name such as "dppa2" or "Al2O3" and corresponding amount.
+        For example, ('CaCO3',1.0) means a pure sample and ('CaCO3',1.0,'TiO2',2.0) stands for a 1:2 mix of CaCO3 and TiO2
     experimenters - list - optional. list of current experimenter(s). reuse current value if not given
     comments - dict - optional. user supplied comments that relate to the current sample. Default = ""
     verbose - bool - optional. set to false to suppress printed output.
@@ -597,7 +586,7 @@ def new_sample(sample_name, composition, experimenters=[], comments={}, verbose 
     if not experimenters:
         try:
             experimenters = gs.RE.md['experimenters']
-        except TypeError:
+        except KeyError:
             experimenters = ''
         print('Current experimenters is/are "%s"' % experimenters)
     else:
@@ -615,6 +604,21 @@ def new_sample(sample_name, composition, experimenters=[], comments={}, verbose 
         new_comments = comments
         gs.RE.md['comments'] = comments
         print('"Comments" has been updated as "%s"' % comments)
+
+    try:
+        gs.RE.md['sample']
+        try:
+            gs.RE.md['sample']['composition']
+        except KeyError:
+            gs.RE.md['sample']['composition'] = {}
+    except KeyError:
+        gs.RE.md['sample'] = {}
+
+    gs.RE.md['sample']['composition'] = composition_dict_gen(sample)
+    sample_name_list = [ el for el in sample if isinstance(el, str)]
+    gs.RE.md['sample_name'] = sample_name_list
+    print('Current sample_name_list is "%s"\ncomposition dictionary is "%s"' % (sample_name_list, composition_dict_gen(sample)))
+    '''
     if not composition:
         try:
             gs.RE.md['sample']['composition']
@@ -624,9 +628,10 @@ def new_sample(sample_name, composition, experimenters=[], comments={}, verbose 
     else:
         gs.RE.md['sample']['composition'] = composition
         print('Current sample composition is %s' % composition)
+    '''
     print('To change experimenters or sample, rerun new_user() or new_sample() respectively, with desired experimenter list as the argument')
     
-    gs.RE.md['sample_name'] = sample_name
+    #gs.RE.md['sample_name'] = sample_name
     time_stub = _timestampstr(time.time())
 
     # try to set up parent layer
@@ -634,10 +639,10 @@ def new_sample(sample_name, composition, experimenters=[], comments={}, verbose 
         gs.RE.md['sample']
     except KeyError:
         gs.RE.md['sample'] = {}
-    gs.RE.md['sample_name'] = sample_name
-    print('Current sample name is %s' % sample_name)
-    gs.RE.md['sample']['composition'] = composition
-    print('Current sample composition is "%s"' % composition)
+    #gs.RE.md['sample_name'] = sample_name
+    #print('Current sample name is %s' % sample_name)
+    #gs.RE.md['sample']['composition'] = composition
+    #print('Current sample composition is "%s"' % composition)
     time_stub = _timestampstr(time.time())
     gs.RE.md['sample']['sample_load_time'] = time_stub
     if verbose: print('sample_load_time has been recorded: %s' % time_stub)
@@ -1154,42 +1159,40 @@ def save_tif(headers, tif_name = False, sum_frames = True, dark_uid=False):
                         print('Sorry, something went wrong with your tif saving')
                         return
 
-        '''
+        
         # write config data
+        print('Writing config file used in header....')
         f_name = None # clear value and re-assign it as we don't need to save multiple files
         #f_name = '_'.join([time_stub, uid, feature+'.cfg'])
         f_name = _filename_gen(header) + '.cfg'
         config_f_name = '_'.join(['config', f_name])
-        w_config_name = os.path.join(W_DIR, config_f_name)
-        if set_value('config_data', header.start):
-            #w_name =None
-            config_dict = set_value('config_data',header.start)['config_data']
-            write_config(config_dict, w_config_name)
-            if os.path.isfile(w_config_name):
+        config_w_name = os.path.join(W_DIR, config_f_name)
+        try:
+            config_dict = header.start['calibration_scan_info']['calibration_information']['config_data']
+            if isinstance(config_dict, dict):
+                pass
+            else:
+                print('Your config data is not a dictionary, please make sure you load your config file properly')
+                print('User load_calibration() and then try again.')
+                print('Stop saving')
+                return
+            write_config(config_dict, config_w_name)
+            if os.path.isfile(config_w_name):
                 print('%s has been saved at %s' % (config_f_name, W_DIR))
-            # write the rest metadata as a file:
-            #metadata_dict = []
-            #for k,v in header.start.items():
-            #    if k == 'calibration_information':
-            #        pass
-            #    else:
-            #        metadata_dict[k]=v
-            #else:
-            #    print('Sorry, something went wrong when saving your config data. Please use write_config() function to try again')
-            # very unlikely to happen but still leave it here
+        except KeyError:
+            print('It seems there is no config data in your metadata dictioanry or it is at wrong dictionary')
+            print('User load_calibration() and then try again.')
+            print('Stop saving')
+            return
 
-
-        #fixme: write!!!
-        else:
-            print('Can not find your calibration config data in current metadata dictionary. Did you save it at all?')
-            print('if you want to save your config data later, use write_config() function')
-            pass
-        #if isinstance(config_dict, dict):
-            #pass
-        #else:
-            #print('your config data is not a dictionary. Writting stop')
-            #return
-        '''
+        print('Writing metadata stored in header....')
+        metadata = [ info for info in gs.RE.md if info != 'calibration_scan_info']
+        md_f_name = _filename_gen(header)+'.txt'
+        md_w_name = os.path.join(W_DIR, md_f_name)
+        with open(md_w_name, 'w') as f:
+            json.dump(metadata, f)
+        if os.path.isfile(md_w_name):
+                print('%s has been saved at %s' % (md_f_name, W_DIR))
 
 def get_motor(header, motor_name):
     ''' Return motor serises in a header
@@ -1234,3 +1237,38 @@ def run_script(script_name):
     #gs.RE.md.past({'field':'value'})
 #    if not sample_temperature:
 #        temp = cs700.value[1]
+
+
+'''
+def _bluesky_pe1():
+    from ophyd.controls.area_detector import (AreaDetectorFileStoreHDF5, AreaDetectorFileStoreTIFF,AreaDetectorFileStoreTIFFSquashing)
+    # from shutter import sh1
+    #shctl1 = EpicsSignal('XF:28IDC-ES:1{Det:PE1}cam1:ShutterMode', name='shctl1')
+    shctl1 = EpicsSignal('XF:28IDC-ES:1{Sh:Exp}Cmd-Cmd', name='shctl1')
+    pe1 = AreaDetectorFileStoreTIFFSquashing('XF:28IDC-ES:1{Det:PE1}',name='pe1',stats=[], ioc_file_path = 'H:/pe1_data',file_path ='/home/xf28id1/pe1_data')#shutter=shctl1, #shutter_val=(1, 0))
+    return pe1
+
+def _bluesky_global_state():
+    Import and return the global state from bluesky.
+
+    from bluesky.standard_config import gs
+    return gs
+
+def _bluesky_metadata_store():
+    Return the dictionary of bluesky global metadata.
+
+    gs = _bluesky_global_state()
+    return gs.RE.md
+
+def _bluesky_cs700():
+    from ophyd.controls import EpicsMotor, PVPositioner
+    cs700 = PVPositioner('XF:28IDC-ES:1{Env:01}T-SP', readback='XF:28IDC-ES:1{Env:01}T-I', #done='XF:28IDC-ES:1{Env:01}Cmd-Busy',
+            done_val=0, stop='XF:28IDC-ES:1{Env:01}Cmd-Cmd', 
+            stop_val=13, put_complete=True, name='cs700')
+    return cs700
+
+def _bluesky_sh1():
+    from xpdacquire.shutter import sh1 
+    #sh1 = Nsls2Shutter(open='XF:28IDC-ES:1{Sh:Exp}Cmd:Opn-Cmd', open_status='XF:28IDC-ES:1{Sh:Exp}Sw:Opn1-Sts', close='XF:28IDC-ES:1{Sh:Exp}Cmd:Cls-Cmd', close_status='XF:28IDC-ES:1{Sh:Exp}Sw:Cls1-Sts')
+    return sh1
+'''
