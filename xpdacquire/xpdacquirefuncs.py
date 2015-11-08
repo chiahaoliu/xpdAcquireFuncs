@@ -22,6 +22,7 @@ import matplotlib.pyplot as plt
 import matplotlib as mpl
 import numpy as np
 import pandas as pd
+import json
 
 import bluesky
 from bluesky.scans import *
@@ -247,7 +248,7 @@ def get_dark_images(num=300, dark_scan_exposure_time=0.2):
     time_stub = _timestampstr(dark_base_header.stop.time)
     imgs = np.array(get_images(dark_base_header,'pe1_image_lightfield'))
     print(np.shape(imgs))
-    for i in range(num-4, num):
+    for i in range(num):
         f_name = '_'.join([time_stub, uid, 'dark','00'+str(i)+'.tif'])
         w_name = os.path.join(D_DIR,f_name)
         img = imgs[i]
@@ -279,12 +280,18 @@ def get_calibration_images (calibrant, wavelength, calibration_scan_exposure_tim
     # Prepare hold state
     try:
         composition_hold = copy.copy(gs.RE.md['sample']['composition']) #as sample dictionary contains all information
-        sample_name_hold = copy.copy(gs.RE.md['sample_name'])
-        sample_hold = copy.copy(gs.RE.md['sample'])
-        cnt_hold = copy.copy(pe1.acquire_time)
     except KeyError:
         composition_hold = []
-        sample_name_hold = {}
+    try:
+        sample_name_hold = copy.copy(gs.RE.md['sample_name'])
+    except KeyError:
+        sample_name_hold = ''
+    try:
+        sample_hold = copy.copy(gs.RE.md['sample'])
+    except KeyError:
+        sample_hold = {}
+    cnt_hold = copy.copy(pe1.acquire_time)
+
     try:
         gs.RE.md['calibration_scan_info']
     except KeyError:
@@ -394,11 +401,6 @@ def get_light_images(scan_time=1.0, scan_exposure_time=0.5, scan_def = False, co
         temp_hold =''
         pass
 
-    if not scan_def:
-        scan = bluesky.scans.Count([pe1],num)
-    else:
-        num = scan_def.num
-        scan = scan_def
 
     # don't expose the PE for more than 5 seconds max, set it to 1 seconds if you go beyond limit
     if scan_exposure_time > 5.0:
@@ -412,6 +414,12 @@ def get_light_images(scan_time=1.0, scan_exposure_time=0.5, scan_def = False, co
     print('Number of exposures is now %s' % num)
     if num == 0: num = 1 # at least one scan
 
+    if not scan_def:
+        scan = bluesky.scans.Count([pe1],num)
+    else:
+        num = scan_def.num
+        scan = scan_def
+
     # assign values to current scan
     scan_exposure_time_hold = copy.copy(pe1.acquire_time)
     pe1.acquisition_time = scan_exposure_time
@@ -423,15 +431,15 @@ def get_light_images(scan_time=1.0, scan_exposure_time=0.5, scan_def = False, co
     gs.RE.md['sample']['temp'] = str(cs700.value[1])+'k'
 
     #shutter status
-    #if sh1.open:
-        #pass
-    #else:
-        #sh1.open = 1
+    if sh1.open:
+        pass
+    else:
+        sh1.open = 1
     # Obtain detector name append in scan
-    det_name = scan_def.detectors[0].name # only for one detector now, could be multiple
-    img_field = '_'.join([det_neme,'image_lightfield'])
+    det_name = scan.detectors[0].name # only for one detector now, could be multiple
+    img_field = '_'.join([det_name,'image_lightfield'])
     try:
-        #sh1.open = 1 # force it to open
+        sh1.open = 1 # force it to open
         scan.subs = [LiveTable([img_field]),LiveImage(img_field)]
         gs.RE(scan)
         #header = db[-1]
