@@ -39,7 +39,7 @@ def _input_metadata():
     '''
     from bluesky.standard_config import gs
     saf = input('SAF number of this beamtime: ')
-    gs.RE.md['SAF_num'] = saf.strip()
+    gs.RE.md['SAF_number'] = saf.strip()
     pn = input('Principal Investigator (PI) name: ')
     gs.RE.md['pi_name'] = pn.strip()
     enames = input('Other experimenter names separated by commas: ')
@@ -62,7 +62,7 @@ def start_beamtime():
     from xpdacquire.xpdacquirefuncs import _MD_template
     _make_datapaths()
     _ensure_empty_datapaths()
-     clear metadata and update from blank template
+    #clear metadata and update from blank template
     _MD_template()
     _input_metadata()
     print('Everything is ready to begin.  Please continue with icollection.')
