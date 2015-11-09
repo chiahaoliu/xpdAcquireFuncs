@@ -233,8 +233,10 @@ def get_dark_images(num=300, dark_scan_exposure_time=0.2):
     except KeyError:
         gs.RE.md['dark_scan_info'] = {}
     gs.RE.md['dark_scan_info'] = {'dark_scan_exposure_time':pe1.acquire_time}
-
-    sh1.close = 1  # close shutter
+    try:
+        sh1.close = 1  # close shutter
+    except AttributeError:
+        pass
 
     try:
         ctscan = bluesky.scans.Count([pe1],num)
@@ -446,13 +448,12 @@ def get_light_images(scan_time=1.0, scan_exposure_time=0.5, scan_def = False, co
         pass
     else:
         sh1.open = 1
-    # Obtain detector name append in scan
-    det_name = scan.detectors[0].name # only for one detector now, could be multiple
-    img_field = '_'.join([det_name,'image_lightfield'])
-    try:
-        sh1.open = 1 # force it to open
-        scan.subs = LiveTable([img_field])
+    # Obtain detector nascan.subs = LiveTable([img_field])
         gs.RE(scan)
+        try:
+            sh1.close = 1
+        except AttributeError:
+            pass
         #header = db[-1]
         #feature = _feature_gen(header)
         #filename = _filename_gen(header)
@@ -464,6 +465,10 @@ def get_light_images(scan_time=1.0, scan_exposure_time=0.5, scan_def = False, co
         #gs.RE.md['sample']['temperature'] = temp_hold
     except:
         # deconstruct the metadata
+        try:
+            sh1.close = 1
+        except AttributeError:
+            pass
         gs.RE.md['scan_info'] = {'scan_exposure_time' : scan_exposure_time_hold,'number_of_exposures' : scan_steps_hold, 'total_scan_duration' : total_scan_duration_hold }
         gs.RE.md['user_supply'] = {}
         gs.RE.md['sample']['temperature'] = temp_hold
@@ -1073,6 +1078,7 @@ def save_tif(headers, tif_name = False, sum_frames = True, dark_uid=False):
         dark_events = list(get_events(dark_header))
         dark_cnt_time_field = [ el for el in dark_events[0]['data'] if el.endswith('acquire_time') ][0]
         dark_cnt_time = dark_events[0]['data'][dark_cnt_time_field]
+        print('we are using dark header with uid = %s' % dark_header.start.uid)
         print('dark_cnt_time = %s' % dark_cnt_time)
 
         # dark correction
@@ -1092,8 +1098,9 @@ def save_tif(headers, tif_name = False, sum_frames = True, dark_uid=False):
         #print(max(dark_amount))
         correct_imgs = []
         for i in range(light_imgs.shape[0]):
-            print(light_imgs[i])
-            dummy = light_imgs[i]-dark_amount
+            #print(light_imgs[i])
+            #dummy = np.abs(light_imgs[i]-dark_amount)
+            dummy = light_imgs[i]
             correct_imgs.append(dummy) # use last d_num dark images
             #print(dummy)
             #if np.isnan(dummy).any():
