@@ -64,12 +64,12 @@ def _bluesky_RE():
     bluesky.register_mds.register_mds(RE)
     return RE
 
-'''def _bluesky_metadata_store():
+def _bluesky_metadata_store():
     Return the dictionary of bluesky global metadata.
     
     gs = _bluesky_global_state()
     return gs.RE.md
-'''
+
 
 ipshell = get_ipython()
 gs = ipshell.user_ns['gs']

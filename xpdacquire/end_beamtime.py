@@ -1,12 +1,13 @@
 import datetime
 import os
-
+from xpdacquire.xpdacquirefuncs import _bluesky_metadata_store
 from xpdacquire.config import datapath
+
 W_SUB_DIR = 'tif_base'
 D_SUB_DIR = 'dark_base'
 R_SUB_DIR = 'config_base'
 S_SUB_DIR = 'script_base'
-
+metadata = _bluesky_metadata_store()
 
 W_DIR = datapath.tif
 D_DIR = datapath.dark
@@ -25,7 +26,16 @@ def end_beamtime():
     
     B_DIR = '/home/xf28id1/billingegroup/pe1_data' # default networked drive where all tifs are automatically written but also user-generated data will be stored
     while True:
-        userID = input('Please enter the SAF number of this beamtime(no space): ')
+        SAF_num = metadata['SAF_number']
+        userID = SAF_num
+        userIn = input('SAF number to current experiment is %i. Is it correct (y/n)? ' % SAF_num)
+        if userIn =='y':
+            pass
+        elif userIn =='n':
+            correct_ID = input('Then please enter correct SAF number: ')
+            userID = correct_ID
+        else:
+            return
         print('Checking if your input results in invalid directory name in unix system...')
         # check if name is a valid name
         clean_name = [ ch for ch in userID if ch.isalnum()]
