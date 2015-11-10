@@ -79,6 +79,7 @@ sh1 = ipshell.user_ns['sh1']
 gs.TEMP_CONTROLLER = cs700
 tth_cal = ipshell.user_ns['tth_cal']
 th_cal = ipshell.user_ns['th_cal']
+photon_shutter = ipshell.user_ns['photon_shutter']
 
 def _feature_gen(header):
     ''' generate a human readable file name. It is made of time + uid + sample_name + user
@@ -239,6 +240,14 @@ def get_dark_images(num=300, dark_scan_exposure_time=0.2):
         pass
 
     try:
+        print('photon_shutter value before close_pv.put(1): %s' % photon_shutter.value)
+        photon_shutter_try = 0
+        while photon_shutter.value ==1 and photon_shutter_try < 5:
+            photon_shutter.close_pv.put(1)
+            time.sleep(4.)   
+            print('photon_shutter value after close_pv.put(1): %s' % photon_shutter.value)
+            photon_shutter_try += 1
+
         ctscan = bluesky.scans.Count([pe1],num)
         ctscan.subs = LiveTable(['pe1_image_lightfield'])
         gs.RE(ctscan)
@@ -247,6 +256,14 @@ def get_dark_images(num=300, dark_scan_exposure_time=0.2):
         pe1.acquire_time = dark_cnt_hold
         # fixme code to to set filter/shutter back to initial state
     except:
+        print('photon_shutter value before close_pv.put(1): %s' % photon_shutter.value)
+        photon_shutter_try = 0
+        while photon_shutter.value ==1 and photon_shutter_try < 5:
+            photon_shutter.close_pv.put(1)
+            time.sleep(4.)   
+            print('photon_shutter value after close_pv.put(1): %s' % photon_shutter.value)
+            photon_shutter_try += 1
+
         gs.RE.md['isdark'] = False
         #del(gs.RE.md['dark_scan_info'])
         pe1.acquire_time = dark_cnt_hold
@@ -263,14 +280,34 @@ def get_dark_images(num=300, dark_scan_exposure_time=0.2):
         w_name = os.path.join(D_DIR,f_name)
         img = imgs[i]
         imsave(w_name, img) # overwrite mode
-        print('%s dark images have been saved' % num)
-        print('%i of these images have been saved as tifs in %s in case you want to view them' % (i+1, D_DIR))
-        if not os.path.isfile(w_name):
+        if os.path.isfile(w_name):
+            #print('%s has been saved to %s' % (f_name, D_DIR))
+            pass
+        else:
             print('Error: dark image tif file not written')
             print('Investigate and re-run')
             return
+        print('%ith of these images have been saved as tifs in %s in case you want to view them' % (i+1, D_DIR))
+    print('%s dark images have been saved' % num)
+    
     global LAST_DARK_UID
     LAST_DARK_UID = dark_base_header.start.uid
+
+def sum_int(header=db[-1]):
+    int_value = list()
+    imgs = np.array(get_images(header,'pe1_image_lightfield'))
+    for i in range(imgs.shape[0]):
+        int_value.append(np.sum(imgs[i]))
+    plt.figure()
+    plt.plot(int_value)
+    plt.show()
+
+def view_last_img():
+    raw_light_img_events = list(get_events(db[-1]))
+    last_raw_light_img = raw_light_img_events[-1]['data']['pe1_image_lightfield']
+    imshow(last_raw_light_img)
+    plt.show()
+
 
 def get_calibration_images (calibrant, wavelength, calibration_scan_exposure_time=0.2 , num=10, composition = False, **kwargs):
     '''Runs a calibration dataset
@@ -327,13 +364,33 @@ def get_calibration_images (calibrant, wavelength, calibration_scan_exposure_tim
     extra_key = kwargs.keys()
     for key, value in kwargs.items():
         gs.RE.md['user_supply'][key] = value
-    sh1.open = 1
+    #shutter status
+    if sh1.open:
+        pass
+    else:
+        sh1.open = 1
+    print('photon_shutter value before open_pv.put(1): %s' % photon_shutter.value)
+    # open the damn shutter
+    photon_shutter_try = 0
+    while photon_shutter.value ==0 and photon_shutter_try < 5:
+        photon_shutter.open_pv.put(1)
+        time.sleep(4.)   
+        print('photon_shutter value after open_pv.put(1): %s' % photon_shutter.value)
+        photon_shutter_try += 1
     try:
         pe1.acquire_time = calibration_scan_exposure_time
         ctscan = bluesky.scans.Count([pe1], num=num)
         print('collecting calibration data. %s acquisitions of %s s will be collected' % (str(num),str(calibration_scan_exposure_time)))
         ctscan.subs = LiveTable(['pe1_image_lightfield'])
         gs.RE(ctscan)
+
+        print('photon_shutter value before close_pv.put(1): %s' % photon_shutter.value)
+        photon_shutter_try = 0
+        while photon_shutter.value ==1 and photon_shutter_try < 5:
+            photon_shutter.close_pv.put(1)
+            time.sleep(4.)   
+            print('photon_shutter value after close_pv.put(1): %s' % photon_shutter.value)
+            photon_shutter_try += 1
 
         # recover to previous state, set to values before calibration
         pe1.acquire_time = cnt_hold
@@ -344,6 +401,14 @@ def get_calibration_images (calibrant, wavelength, calibration_scan_exposure_tim
         gs.RE.md['sample']['composition'] = composition_hold
     except KeyError:
         # recover to previous state, set to values before calibration
+        print('photon_shutter value before close_pv.put(1): %s' % photon_shutter.value)
+        photon_shutter_try = 0
+        while photon_shutter.value ==1 and photon_shutter_try < 5:
+            photon_shutter.close_pv.put(1)
+            time.sleep(4.)   
+            print('photon_shutter value after close_pv.put(1): %s' % photon_shutter.value)
+            photon_shutter_try += 1
+
         pe1.acquire_time = cnt_hold
         gs.RE.md['iscalibration'] = False
         del(gs.RE.md['calibrant'])
@@ -434,6 +499,11 @@ def get_light_images(scan_time=1.0, scan_exposure_time=0.5, scan_def = False, co
     else:
         num = scan_def.num
         scan = scan_def
+    # get motor name
+    try:
+        motot_name = scan.motor.name
+    except AttributeError:
+        pass
 
     # assign values to current scan
     scan_type = scan.logdict()['scn_cls']
@@ -448,12 +518,31 @@ def get_light_images(scan_time=1.0, scan_exposure_time=0.5, scan_def = False, co
         pass
     else:
         sh1.open = 1
-    # Obtain detector nascan.subs = LiveTable([img_field])
+    print('photon_shutter value before open_pv.put(1): %s' % photon_shutter.value)
+    # open the damn shutter
+    photon_shutter_try = 0
+    while photon_shutter.value ==0 and photon_shutter_try < 5:
+        photon_shutter.open_pv.put(1)
+        time.sleep(4.)   
+        print('photon_shutter value after open_pv.put(1): %s' % photon_shutter.value)
+        photon_shutter_try += 1
+    
+    # Obtain detector
+    try:
         gs.RE(scan)
-        try:
-            sh1.close = 1
-        except AttributeError:
-            pass
+        #try:
+            #sh1.close = 1
+        #except AttributeError:
+            #pass
+        print('photon_shutter value before close_pv.put(1): %s' % photon_shutter.value)
+        photon_shutter_try = 0
+        while photon_shutter.value ==1 and photon_shutter_try < 5:
+            photon_shutter.close_pv.put(1)
+            time.sleep(4.)   
+            print('photon_shutter value after close_pv.put(1): %s' % photon_shutter.value)
+            photon_shutter_try += 1
+        
+        #print('photon_shutter value after close_pv.put(1): %s' % photon_shutter.value)
         #header = db[-1]
         #feature = _feature_gen(header)
         #filename = _filename_gen(header)
@@ -465,10 +554,20 @@ def get_light_images(scan_time=1.0, scan_exposure_time=0.5, scan_def = False, co
         #gs.RE.md['sample']['temperature'] = temp_hold
     except:
         # deconstruct the metadata
-        try:
-            sh1.close = 1
-        except AttributeError:
-            pass
+        #try:
+            #sh1.close = 1
+        #except AttributeError:
+            #pass
+        # close photon shutter
+        print('photon_shutter value before close_pv.put(1): %s' % photon_shutter.value)
+        photon_shutter_try = 0
+        while photon_shutter.value ==1 and photon_shutter_try < 5:
+            photon_shutter.close_pv.put(1)
+            time.sleep(4.)   
+            print('photon_shutter value after close_pv.put(1): %s' % photon_shutter.value)
+            photon_shutter_try += 1
+
+
         gs.RE.md['scan_info'] = {'scan_exposure_time' : scan_exposure_time_hold,'number_of_exposures' : scan_steps_hold, 'total_scan_duration' : total_scan_duration_hold }
         gs.RE.md['user_supply'] = {}
         gs.RE.md['sample']['temperature'] = temp_hold
@@ -983,6 +1082,10 @@ def print_dict(d, ident = '', braces=1):
         else:
             print (ident+'%s = %s' %(key, value))
 
+def print_metadata():
+    print_dict(gs.RE.md)
+
+
 def _timestampstr(timestamp):
     time= str(datetime.datetime.fromtimestamp(timestamp))
     date = time[:10]
@@ -1069,7 +1172,7 @@ def save_tif(headers, tif_name = False, sum_frames = True, dark_uid=False):
                 dark_header_list.append(db[d_uid])
             dark_time_list = []
             for dark_header in dark_header_list:
-                dark_time_list.append(header.stop.time)
+                dark_time_list.append(dark_header.stop.time)
             ind = np.argsort(dark_time_list)
             dark_header = dark_header_list[ind[-1]]
         else:
@@ -1099,8 +1202,9 @@ def save_tif(headers, tif_name = False, sum_frames = True, dark_uid=False):
         correct_imgs = []
         for i in range(light_imgs.shape[0]):
             #print(light_imgs[i])
-            #dummy = np.abs(light_imgs[i]-dark_amount)
-            dummy = light_imgs[i]
+            dummy = (light_imgs[i]-dark_amount)
+            #print('corrected image intensity is %s',str(dummy))
+            #dummy = light_imgs[i]
             correct_imgs.append(dummy) # use last d_num dark images
             #print(dummy)
             #if np.isnan(dummy).any():
