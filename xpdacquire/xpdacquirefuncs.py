@@ -207,7 +207,7 @@ def _filename_gen(header):
     return file_name
 
 
-def get_dark_images(num=300, dark_scan_exposure_time=0.2):
+def get_dark_images(num=10, dark_scan_exposure_time=0.2):
     ''' Manually acquire stacks of dark images that will be used for dark subtraction later
 
     This module runs scans with the shutter closed (dark images) and saves them tagged
@@ -292,6 +292,85 @@ def get_dark_images(num=300, dark_scan_exposure_time=0.2):
     
     global LAST_DARK_UID
     LAST_DARK_UID = dark_base_header.start.uid
+
+def get_dark_images_test(num=10):
+    ''' Manually acquire stacks of dark images that will be used for dark subtraction later
+
+    This module runs scans with the shutter closed (dark images) and saves them tagged
+    as such.  You shouldn't have to look at these, they will be automatically used later
+    for doing dark subtraction when you collect actual images.
+
+    The default settings are to collect 1 minute worth of dark scans in increments
+    of 0.2 seconds.  This default behavior can be overridden by providing optional
+    values for num (number of frames) and dark_scan_exposure_time.
+
+    Arguments:
+       num - int - Optional. Number of dark frames to take.  Default = 10
+    '''
+    # set up scan
+    #gs = _bluesky_global_state()
+    #RE = _bluesky_RE()
+    #pe1 = _bluesky_pe1()
+    gs.RE.md['isdark'] = True
+    dark_cnt_hold = copy.copy(pe1.acquire_time)
+    try:
+        gs.RE.md['dark_scan_info']
+    except KeyError:
+        gs.RE.md['dark_scan_info'] = {}
+    for i in range(1,6):
+        pe1.acquire_time = 0.1*i
+        dark_scan_expsoure = pe1.acquire_time
+        gs.RE.md['dark_scan_info'] = {'dark_scan_exposure_time':pe1.acquire_time}
+
+        try:
+            print('photon_shutter value before close_pv.put(1): %s' % photon_shutter.value)
+            photon_shutter_try = 0
+            while photon_shutter.value ==1 and photon_shutter_try < 5:
+                photon_shutter.close_pv.put(1)
+                time.sleep(4.)   
+                print('photon_shutter value after close_pv.put(1): %s' % photon_shutter.value)
+                photon_shutter_try += 1
+
+            ctscan = bluesky.scans.Count([pe1],num)
+            ctscan.subs = LiveTable(['pe1_image_lightfield'])
+            gs.RE(ctscan)
+
+            # save tif to dark_base
+            dark_base_header=db[-1]
+            uid = dark_base_header.start.uid[:6]
+            time_stub = _timestampstr(dark_base_header.stop.time)
+            imgs = np.array(get_images(dark_base_header,'pe1_image_lightfield'))
+            print('image shape is '+ str(np.shape(imgs)))
+
+            for i in range(num-2,num):
+                f_name = '_'.join([time_stub, uid, 'dark','00'+str(i)+'.tif'])
+                w_name = os.path.join(D_DIR,f_name)
+                img = imgs[i]
+                imsave(w_name, img) # overwrite mode
+                if os.path.isfile(w_name):
+                    print('%s has been saved to %s' % (f_name, D_DIR))
+                    pass
+                else:
+                    print('Error: dark image tif file not written')
+                    print('Investigate and re-run')
+                    return
+                print('%ith of these images have been saved as tifs in %s in case you want to view them' % (i+1, D_DIR))
+
+        except:
+            print('photon_shutter value before close_pv.put(1): %s' % photon_shutter.value)
+            photon_shutter_try = 0
+            while photon_shutter.value ==1 and photon_shutter_try < 5:
+                photon_shutter.close_pv.put(1)
+                time.sleep(4.)   
+                print('photon_shutter value after close_pv.put(1): %s' % photon_shutter.value)
+                photon_shutter_try += 1
+            gs.RE.md['isdark'] = False
+            pe1.acquire_time = dark_cnt_hold
+            return
+
+    gs.RE.md['isdark'] = False
+    pe1.acquire_time = dark_cnt_hold
+        
 
 def sum_int(header=db[-1]):
     int_value = list()
@@ -1115,7 +1194,7 @@ def _clean_metadata():
         del(gs.RE.md[key])
     gs.RE.md['sample'] = {}
 
-def save_tif(headers, tif_name = False, sum_frames = True, dark_uid=False):
+def save_tif(headers, tif_name = False, sum_frames = True, dark_uid = False, dark_correct = True):
     ''' save images obtained from dataBroker as tiff format files. It returns nothing.
 
     arguments:
@@ -1163,17 +1242,10 @@ def save_tif(headers, tif_name = False, sum_frames = True, dark_uid=False):
             f_d = [ f for f in os.listdir(D_DIR) ]
             if not f_d:
                 print('You do not have any dark image in dark_base, please at least do one dark scan before all scans')
+                print('tif file will be saved without dark correction')
+                dark_correct = False
             else:
                 pass
-            '''dummy = [ f for f in os.listdir(D_DIR) ]
-            dark_header_list = list()
-            for el in dummy:
-                dark_header_list.append(os.path.join(D_DIR, el))
-            sorted(dark_header_list, key = os.path.getmtime)
-            dark_header_last = dark_header_list[-1]
-            dark_header_uid = dark_header_last[17:22]
-            print('Use dark images from header with uid= %s' % dark_header_uid)
-            dark_header = db[dark_header_uid]'''
 
             uid_list = []
             for f in f_d:
@@ -1215,17 +1287,13 @@ def save_tif(headers, tif_name = False, sum_frames = True, dark_uid=False):
         correct_imgs = []
         for i in range(light_imgs.shape[0]):
             #print(light_imgs[i])
-            dummy = (light_imgs[i]-dark_amount)
+            if dark_correct:
+                dummy = (light_imgs[i]-dark_amount)
             #print('corrected image intensity is %s',str(dummy))
-            #dummy = light_imgs[i]
-            correct_imgs.append(dummy) # use last d_num dark images
-            #print(dummy)
-            #if np.isnan(dummy).any():
-                #print('we have nan in correct_imgs')
-                #return
-            #else:
-                #print('we do not have nan in correct_imgs')
-            #print(max(correct_imgs[i]))
+            else:
+                dummy = light_imgs[i] # raw image, no correction
+            correct_imgs.append(dummy)
+            
         scan_type = header.start.scan_type
         if scan_type != 'Count':
             sum_frames = False
@@ -1360,7 +1428,212 @@ def save_tif(headers, tif_name = False, sum_frames = True, dark_uid=False):
             print('It seems there is no config data in your metadata dictioanry or it is at wrong dictionary')
             print('User load_calibration() and then try again.')
             print('Stop saving')
+
+        print('Writing metadata stored in header....')
+        metadata = [ info for info in gs.RE.md if info != 'calibration_scan_info']
+        md_f_name = _filename_gen(header)+'.txt'
+        md_w_name = os.path.join(W_DIR, md_f_name)
+        with open(md_w_name, 'w') as f:
+            json.dump(metadata, f)
+        if os.path.isfile(md_w_name):
+                print('%s has been saved at %s' % (md_f_name, W_DIR))
+
+def save_tif_test(headers, tif_name = False, sum_frames = True, dark_uid = False, dark_correct = True):
+    ''' save images obtained from dataBroker as tiff format files. It returns nothing.
+
+    arguments:
+        headers - list - a list of header objects obtained from a query to dataBroker
+        file_name - str - optional. File name of tif file being saved. default setting yields a name made of time, uid, feature of your header
+        sum_frames - bool - optional. when it is set to True, image frames contained in header will be summed as one file
+        dark_uid - str - optional. The uid of dark_image you wish to use. If unspecified, the most recent dark stack in dark_base will beused.
+    '''
+    # prepare header
+    if type(list(headers)[1]) == str:
+        header_list = list()
+        header_list.append(headers)
+    else:
+        header_list = headers
+
+    # iterate over header(s)
+    for header in header_list:
+        print('Plotting and saving your image(s) now....')
+        # get images and exposure time from headers
+        try:
+            img_field =[el for el in header.descriptors[0]['data_keys'] if el.endswith('_image_lightfield')][0]
+            print('Images are pulling out from %s' % img_field)
+            light_imgs = np.array(get_images(header,img_field))
+        except IndexError:
+            uid = header.start.uid
+            print('This header with uid = %s does not contain any image' % uid)
+            print('Was area detector correctly mounted then?')
+            print('Stop saving')
             return
+            
+        # get events from header
+        cnt_time = find_cnt_time(header)
+        print('cnt_time = %s' % cnt_time)
+        
+        # Identify the latest dark stack
+        print('find corresponding dark image....')
+        if not dark_uid:
+            try:
+                LAST_DARK_UID # see if LAST_DARK_UID global variable exits
+                dark_header = db[str(LAST_DARK_UID)]
+            except NameError:
+                #uid_list = [] # get uid from dark_base
+                pass
+            dark_header = find_dark(cnt_time)
+        else:
+            dark_header = db[str(dark_uid)]
+
+        print('dark_cnt_time = %s' % find_cnt_time(dark_header))
+
+        # dark correction
+        dark_img_field =[el for el in dark_header.descriptors[0]['data_keys'] if el.endswith('_image_lightfield')][0]
+        dark_img_list = np.array(get_images(dark_header,dark_img_field)) # confirmed that it comes with reverse order
+        dark_amount = dark_img_list[-1]
+
+        correct_imgs = []
+        for i in range(light_imgs.shape[0]):
+            if dark_correct:
+                dummy = (light_imgs[i]-dark_amount)
+            else:
+                dummy = light_imgs[i] # raw image, no correction
+            correct_imgs.append(dummy)
+            
+        scan_type = header.start.scan_type
+        if scan_type != 'Count':
+            sum_frames = False
+        else:
+            pass
+
+        if sum_frames:
+            if not tif_name:
+                header_uid = header.start.uid[:5]
+                time_stub = _timestampstr(header.stop.time)
+                feature = _feature_gen(header)
+                f_name ='_'.join([time_stub, header_uid, feature+ '.tif'])
+            else:
+                f_name = tif_name
+
+            w_name = os.path.join(W_DIR,f_name)
+            img = np.sum(correct_imgs,0)/len(correct_imgs)
+            #if np.isnan(img).any():
+                #print('we have nan in summed img')
+            #else:
+                #print('we do not have nan in summed img')
+                #pass
+            try:
+                fig = plt.figure(f_name)
+                plt.imshow(img)
+                plt.show()
+            except TypeError:
+                print('This is a squashed tif')
+            imsave(w_name, img) # overwrite mode now !!!!
+            if os.path.isfile(w_name):
+                print('dark corrected image "%s" has been saved at "%s"' % (f_name, W_DIR))
+            else:
+                print('Sorry, something went wrong with your tif saving')
+                return
+
+        else:
+            if scan_type == 'Count':  #fixme: is Count the only one doesn't move motor?
+                for i in range(len(header_events)):
+                    if not tif_name:
+                        header_uid = header.start.uid[:5]
+                        time_stub =_timestampstr(header_events[i]['timestamps'][img_field])
+                        feature = _feature_gen(header)
+                        f_name ='_'.join([time_stub, header_uid, feature, '00'+str(i)+'.tif'])
+                        #f_name = '_'.join([_filename_gen(header),'00'+str(i)+'.tif'])
+                        #f_name = '_'.join(header_filename, '00'+str(i)+'.tif')
+                    else:
+                        f_name = tif_name + '_00' + str(i) +'.tif'
+                    w_name = os.path.join(W_DIR,f_name)
+                    img = correct_imgs[i]
+                    if np.isnan(img).any():
+                        print('we have nan in indivisual img')
+                    else:
+                        print('we do not have nan in indivisual img')
+                        pass
+                    if len(correct_imgs) <5:
+                        try:
+                            fig = plt.figure(f_name)
+                            plt.imshow(img)
+                            plt.show()
+                        except TypeError:
+                            pass
+                    else:
+                        #print('There are more than 5 images in this header, will not plot now for saving computation resource/')
+                        #print('You can view these images after they are saved')
+                        pass
+                    
+                    imsave(w_name, img) # overwrite mode now !!!!
+                    if os.path.isfile(w_name):
+                        print('dark corrected %s has been saved at %s' % (f_name, W_DIR))
+                    else:
+                        print('Sorry, something went wrong with your tif saving')
+                        return
+
+
+            else:
+                print('This is a motor scan, frames will be saved seperately..')
+                # is a motor scan now, get motor name
+                motor_name = eval(header.start.motor).name
+                motor_series = get_motor(header,motor_name)
+                for i in range(len(header_events)): # length of light images should be as long as temp series
+                    if not tif_name:
+                        header_uid = header.start.uid[:5]
+                        time_stub =_timestampstr(header_events[i]['timestamps'][img_field])
+                        feature = _feature_gen(header)
+                        motor_step = str(motor_series[i])
+                        f_name ='_'.join([time_stub, header_uid, feature, motor_step, '00'+str(i)+'.tif'])
+                        #f_name = '_'.join([_filename_gen(header),'00'+str(i)+'.tif'])
+                        #f_name = '_'.join(header_filename, '00'+str(i)+'.tif')
+                    else:
+                        f_name ='_'.join([tif_name, motor_step, '00'+str(i)+'.tif'])
+                    w_name = os.path.join(W_DIR,f_name)
+                    img = correct_imgs[i]
+                    if len(correct_imgs)<5:
+                        try:
+                            fig = plt.figure(f_name)
+                            plt.imshow(img)
+                            plt.show()
+                        except TypeError:
+                            pass
+                    else:
+                        #print('There are more than 5 images in this header, will not plot now for saving computation resource/')
+                        #print('You can view these images after they are saved')
+                        pass
+                    imsave(w_name, img) # overwrite mode now !!!!
+                    if os.path.isfile(w_name):
+                        print('dark corrected %s has been saved at %s' % (f_name, W_DIR))
+                    else:
+                        print('Sorry, something went wrong with your tif saving')
+                        return
+
+        
+        # write config data
+        print('Writing config file used in header....')
+        f_name = None # clear value and re-assign it as we don't need to save multiple files
+        #f_name = '_'.join([time_stub, uid, feature+'.cfg'])
+        f_name = _filename_gen(header) + '.cfg'
+        config_f_name = '_'.join(['config', f_name])
+        config_w_name = os.path.join(W_DIR, config_f_name)
+        try:
+            config_dict = header.start['calibration_scan_info']['calibration_information']['config_data']
+            if isinstance(config_dict, dict):
+                pass
+            else:
+                print('Your config data is not a dictionary, please make sure you load your config file properly')
+                print('User load_calibration() and then try again.')
+                print('Stop saving')
+                return
+            write_config(config_dict, config_w_name)
+            if os.path.isfile(config_w_name):
+                print('%s has been saved at %s' % (config_f_name, W_DIR))
+        except KeyError:
+            print('It seems there is no config data in your metadata dictioanry or it is at wrong dictionary')
+            print('User load_calibration() and then try again.')
 
         print('Writing metadata stored in header....')
         metadata = [ info for info in gs.RE.md if info != 'calibration_scan_info']
@@ -1407,6 +1680,47 @@ def run_script(script_name):
     m_name = os.path.join('S_DIR', module)
     #%run -i $m_name
 
+def find_dark(light_cnt_time):
+    '''find desired cnt_time in dark_base'''
+
+    f_d = [ f for f in os.listdir(D_DIR) ]
+    if not f_d:
+            print('You do not have any dark image in dark_base, please at least do one dark scan before all scans')
+            return
+    else:
+        pass
+
+    uid_list = []
+    for f in f_d:
+        uid_list.append(f[17:22])
+    uid_unique = np.unique(uid_list)
+    
+    dark_header_list = []
+    for d_uid in uid_unique:
+        dark_header_list.append(db[d_uid])
+
+    dark_list = [ h for h in dark_header_list if find_cnt_time(h) == light_cnt_time ]
+    if dark_list:
+        dark_time_list = []
+        for dark_header in dark_list:
+            dark_time_list.append(dark_header.stop.time)
+
+        ind = np.argsort(dark_time_list)
+        #dark_header = dark_header_list[ind[-1]]
+        dark_header = dark_header_list[ind[0]]
+        return dark_header
+    else:
+        print('Could not find desired cnt_time in your dark_base. Please rerun get_dark_images with correct arugment to complete dark_base')
+        return
+
+
+def find_cnt_time(header):
+    ''' find cnt_time of header given'''
+
+    events = list(get_events(header))
+    cnt_time_field = [ el for el in events[0]['data'] if el.endswith('acquire_time') ][0]
+    cnt_time = events[0]['data'][cnt_time_field]
+    return cnt_time
 
 
 # Holding place
