@@ -509,7 +509,7 @@ def get_calibration_images (calibrant, wavelength, calibration_scan_exposure_tim
     LAST_CALIB_UID = calib_scan_header.start.uid
 
 
-def get_light_images(scan_time=1.0, scan_exposure_time=0.5, scan_def = False, comments={}):
+def get_light_images(scan_time=1.0, scan_exposure_time=0.5,  comments=[''], number_shutter_tries=5):
     '''function for getting a light image
 
     Arguments:
@@ -523,9 +523,9 @@ def get_light_images(scan_time=1.0, scan_exposure_time=0.5, scan_def = False, co
     #pe1 = _bluesky_pe1()
     #cs700 = _bluesky_cs700()
     if comments:
-        extra_key = comments.keys()
-        for key, value in comments.items():
-            gs.RE.md['user_supply'][key] = value
+        #extra_key = comments.keys()
+        for value in comments:
+            gs.RE.md['comments_gli'] = value
     # test if parent layers exitst
     try:
         gs.RE.md['scan_info']
@@ -571,23 +571,14 @@ def get_light_images(scan_time=1.0, scan_exposure_time=0.5, scan_def = False, co
     #configure pe1:
     scan_exposure_time_hold = copy.copy(pe1.acquire_time)
     pe1.acquire_time = scan_exposure_time
-    pe1_num_images_hold = copy.copy(pe1.num_images)
-    pe1.num_images = num # increase frames per point
+    #pe1_num_images_hold = copy.copy(pe1.num_images)
+    #pe1.num_images = num # increase frames per point
 
     # set up scan definition
-    if not scan_def:
-        scan = bluesky.scans.Count([pe1])
-    else:
-        #num = scan_def.num
-        scan = scan_def
-    # get motor name
-    try:
-        motot_name = scan.motor.name
-    except AttributeError:
-        pass
+    scan = bluesky.scans.Count([pe1],num)
 
     # assign values to current scan
-    scan_type = scan.logdict()['scn_cls']
+    #scan_type = scan.logdict()['scn_cls']
     gs.RE.md['scan_info']['scan_exposure_time'] = pe1.acquire_time
     gs.RE.md['scan_info']['number_of_exposures'] = num
     gs.RE.md['scan_info']['total_scan_duration'] = num*pe1.acquire_time
@@ -599,14 +590,20 @@ def get_light_images(scan_time=1.0, scan_exposure_time=0.5, scan_def = False, co
         pass
     else:
         sh1.open = 1
+
+    # this logic needed when we are using photon shutter at xpd
     print('photon_shutter value before open_pv.put(1): %s' % photon_shutter.value)
     # open the damn shutter
     photon_shutter_try = 0
-    while photon_shutter.value ==0 and photon_shutter_try < 5:
+    while photon_shutter.value == 0 and photon_shutter_try < number_shutter_tries:
         photon_shutter.open_pv.put(1)
         time.sleep(4.)   
         print('photon_shutter value after open_pv.put(1): %s' % photon_shutter.value)
         photon_shutter_try += 1
+    if photon_shutter.value == 0:
+        print('photon shutter failed to open after %i tries. Please check before continuing', % photon_shutter)
+        return
+    
     
     # Obtain detector
     try:
@@ -647,7 +644,6 @@ def get_light_images(scan_time=1.0, scan_exposure_time=0.5, scan_def = False, co
             time.sleep(4.)   
             print('photon_shutter value after close_pv.put(1): %s' % photon_shutter.value)
             photon_shutter_try += 1
-
 
         gs.RE.md['scan_info'] = {'scan_exposure_time' : scan_exposure_time_hold,'number_of_exposures' : scan_steps_hold, 'total_scan_duration' : total_scan_duration_hold }
         gs.RE.md['user_supply'] = {}
