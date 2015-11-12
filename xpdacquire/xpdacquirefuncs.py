@@ -576,27 +576,6 @@ def nstep(start, stop, step_size):
     step = np.arange(start, stop, step_size)
     return np.append(step, stop)
 
-def Tscan(start, stop, step_size, exposure_time_per_point =1.0, exposure_time_per_frame = 0.2):
-    if exposure_time_per_frame > 5:
-        exposure_time_per_frame = 5
-    pe1.acquire_time = exposure_time_per_frame
-    num = np.rint(exposure_time_per_point / exposure_time_per_frame) 
-    TimTscan(pe1,cs700)    
-    return
-
-def TimTscan(det, motor):
-    yield Msg('open_run')
-    yield Msg('create')
-    for temp in tstep(start,stop, step_size):
-        yield Msg('set', motor, temp)
-        yield Msg('sleep', None, 1)
-        yield Msg('trigger', det)
-        while read_num < num
-           yield Msg('read', det)
-           read_num += 1
-    yield Msg('save')
-    yield Msg('close_run')
-
 def tseries(start_temp, stop_temp, step_size = 5.0, total_exposure_time_per_point =1.0, exposure_time_per_frame = 0.2, t_device = cs700, comments = ''):
     ''' run a temperature series scan.
 
