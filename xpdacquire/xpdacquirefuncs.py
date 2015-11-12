@@ -38,6 +38,7 @@ from metadatastore.commands import find_run_starts
 
 from xpdacquire.config import datapath
 from xpdacquire.utils import composition_analysis
+from xpdacquire.xpd_search import *
 from tifffile import *
 
 
@@ -199,93 +200,21 @@ def filename_gen(header):
     return file_name
 
 
-def get_dark_images(num=10, dark_scan_exposure_time=0.2):
-    ''' Manually acquire stacks of dark images that will be used for dark subtraction later
 
-    This module runs scans with the shutter closed (dark images) and saves them tagged
-    as such.  You shouldn't have to look at these, they will be automatically used later
-    for doing dark subtraction when you collect actual images.
+def run_script(script_name):
+    ''' Run user script in script base
 
-    The default settings are to collect 1 minute worth of dark scans in increments
-    of 0.2 seconds.  This default behavior can be overridden by providing optional
-    values for num (number of frames) and dark_scan_exposure_time.
-
-    Arguments:
-       num - int - Optional. Number of dark frames to take.  Default = 300
-       cnt_time - float - Optional. exposure time for each frame. Default = 0.2
+    argument:
+    script_name - str - name of script user wants to run. It must be sit under script_base to avoid confusion when asking Python to run script.
     '''
-    # set up scan
-    #gs = _bluesky_global_state()
-    #RE = _bluesky_RE()
-    #pe1 = _bluesky_pe1()
-    gs.RE.md['isdark'] = True
-    dark_cnt_hold = copy.copy(pe1.acquire_time)
-    pe1.acquire_time = dark_scan_exposure_time
-    try:
-        gs.RE.md['dark_scan_info']
-    except KeyError:
-        gs.RE.md['dark_scan_info'] = {}
-    gs.RE.md['dark_scan_info'] = {'dark_scan_exposure_time':pe1.acquire_time}
-    try:
-        sh1.close = 1  # close shutter
-    except AttributeError:
-        pass
+    module = script_name
+    m_name = os.path.join('S_DIR', module)
+    #%run -i $m_name
 
-    try:
-        print('photon_shutter value before close_pv.put(1): %s' % photon_shutter.value)
-        photon_shutter_try = 0
-        while photon_shutter.value ==1 and photon_shutter_try < 5:
-            photon_shutter.close_pv.put(1)
-            time.sleep(4.)   
-            print('photon_shutter value after close_pv.put(1): %s' % photon_shutter.value)
-            photon_shutter_try += 1
 
-        ctscan = bluesky.scans.Count([pe1],num)
-        ctscan.subs = LiveTable(['pe1_image_lightfield'])
-        gs.RE(ctscan)
-        gs.RE.md['isdark'] = False
-        #del(gs.RE.md['dark_scan_info'])
-        pe1.acquire_time = dark_cnt_hold
-        # fixme code to to set filter/shutter back to initial state
-    except:
-        print('photon_shutter value before close_pv.put(1): %s' % photon_shutter.value)
-        photon_shutter_try = 0
-        while photon_shutter.value ==1 and photon_shutter_try < 5:
-            photon_shutter.close_pv.put(1)
-            time.sleep(4.)   
-            print('photon_shutter value after close_pv.put(1): %s' % photon_shutter.value)
-            photon_shutter_try += 1
+##################### common functions  #####################
 
-        gs.RE.md['isdark'] = False
-        #del(gs.RE.md['dark_scan_info'])
-        pe1.acquire_time = dark_cnt_hold
-        # fixme code to to set filter/shutter back to initial state
-
-    # write images to tif file, only save last 3 images as a hook and for data interrogation
-    dark_base_header = db[-1]
-    uid = dark_base_header.start.uid[:6]
-    time_stub = _timestampstr(dark_base_header.stop.time)
-    imgs = np.array(get_images(dark_base_header,'pe1_image_lightfield'))
-    print(np.shape(imgs))
-    for i in range(num-4,num):
-        f_name = '_'.join([time_stub, uid, 'dark','00'+str(i)+'.tif'])
-        w_name = os.path.join(D_DIR,f_name)
-        img = imgs[i]
-        imsave(w_name, img) # overwrite mode
-        if os.path.isfile(w_name):
-            #print('%s has been saved to %s' % (f_name, D_DIR))
-            pass
-        else:
-            print('Error: dark image tif file not written')
-            print('Investigate and re-run')
-            return
-        print('%ith of these images have been saved as tifs in %s in case you want to view them' % (i+1, D_DIR))
-    print('%s dark images have been saved' % num)
-    
-    global LAST_DARK_UID
-    LAST_DARK_UID = dark_base_header.start.uid
-
-def get_dark_images_test(num=10):
+def get_dark_images(num=10, dark_scan_exposure_time = False):
     ''' Manually acquire stacks of dark images that will be used for dark subtraction later
 
     This module runs scans with the shutter closed (dark images) and saves them tagged
@@ -309,21 +238,29 @@ def get_dark_images_test(num=10):
         gs.RE.md['dark_scan_info']
     except KeyError:
         gs.RE.md['dark_scan_info'] = {}
-    for i in range(1,6):
+    
+    print('Collecting your dark stacks now...')
+    dummy_scan = blusky.scans.Count([pe1], num=10)  # to get rid of residual current
+    gs.RE(dummy_scan)
+
+    for i in range(1,51):
         pe1.acquire_time = 0.1*i
         dark_scan_expsoure = pe1.acquire_time
         gs.RE.md['dark_scan_info'] = {'dark_scan_exposure_time':pe1.acquire_time}
 
         try:
-            print('photon_shutter value before close_pv.put(1): %s' % photon_shutter.value)
             photon_shutter_try = 0
-            while photon_shutter.value ==1 and photon_shutter_try < 5:
+            number_shutter_tries = 5
+            while photon_shutter.value == 1 and photon_shutter_try < number_shutter_tries:
                 photon_shutter.close_pv.put(1)
                 time.sleep(4.)   
                 print('photon_shutter value after close_pv.put(1): %s' % photon_shutter.value)
                 photon_shutter_try += 1
+            if photon_shutter.value == 1:
+                print('photon shutter failed to close after %i tries. Please check before continuing' % photon_shutter_try)
+                return
 
-            ctscan = bluesky.scans.Count([pe1],num)
+            ctscan = bluesky.scans.Count([pe1],num=1)
             ctscan.subs = LiveTable(['pe1_image_lightfield'])
             gs.RE(ctscan)
 
@@ -331,37 +268,39 @@ def get_dark_images_test(num=10):
             dark_base_header=db[-1]
             uid = dark_base_header.start.uid[:6]
             time_stub = _timestampstr(dark_base_header.stop.time)
-            imgs = np.array(get_images(dark_base_header,'pe1_image_lightfield'))
+            img = np.array(get_images(dark_base_header,'pe1_image_lightfield'))
             print('image shape is '+ str(np.shape(imgs)))
 
-            for i in range(num-2,num):
-                f_name = '_'.join([time_stub, uid, 'dark','00'+str(i)+'.tif'])
-                w_name = os.path.join(D_DIR,f_name)
-                img = imgs[i]
-                imsave(w_name, img) # overwrite mode
-                if os.path.isfile(w_name):
-                    print('%s has been saved to %s' % (f_name, D_DIR))
-                    pass
-                else:
-                    print('Error: dark image tif file not written')
-                    print('Investigate and re-run')
-                    return
-                print('%ith of these images have been saved as tifs in %s in case you want to view them' % (i+1, D_DIR))
+            f_name = '_'.join([time_stub, uid, 'dark','00'+str(i)+'.tif'])
+            w_name = os.path.join(D_DIR,f_name)
+            imsave(w_name, img) # overwrite mode
+
+            gs.RE.md['isdark'] = False
+            pe1.quire_time = dark_cnt_hold
+
+            if os.path.isfile(w_name):
+                print('%s has been saved to %s' % (f_name, D_DIR))
+                pass
+            else:
+                print('Error: dark image tif file not written')
+                print('Investigate and re-run')
+                return
+            
 
         except:
+            gs.RE.md['isdark'] = False
+            pe1.acquire_time = dark_cnt_hold
+
             photon_shutter_try = 0
-            while photon_shutter.value ==1 and photon_shutter_try < 5:
+            number_shutter_tries = 5
+            while photon_shutter.value == 1 and photon_shutter_try < number_shutter_tries:
                 photon_shutter.close_pv.put(1)
                 time.sleep(4.)   
                 print('photon_shutter value after close_pv.put(1): %s' % photon_shutter.value)
                 photon_shutter_try += 1
-            gs.RE.md['isdark'] = False
-            pe1.acquire_time = dark_cnt_hold
-            return
-
-    gs.RE.md['isdark'] = False
-    pe1.acquire_time = dark_cnt_hold
-        
+            if photon_shutter.value == 1:
+                print('photon shutter failed to close after %i tries. Please check before continuing' % photon_shutter_try)
+                return        
 
 def sum_int(header=db[-1]):
     int_value = list()
@@ -450,7 +389,6 @@ def get_calibration_images (calibrant, wavelength, calibration_scan_exposure_tim
         ctscan.subs = LiveTable(['pe1_image_lightfield'])
         gs.RE(ctscan)
 
-        #print('photon_shutter value before close_pv.put(1): %s' % photon_shutter.value)
         photon_shutter_try = 0
         number_shutter_tries = 5
         while photon_shutter.value == 1 and photon_shutter_try < number_shutter_tries:
@@ -469,7 +407,8 @@ def get_calibration_images (calibrant, wavelength, calibration_scan_exposure_tim
         gs.RE.md['sample_name'] = sample_name_hold
         gs.RE.md['sample'] = sample_hold
         gs.RE.md['sample']['composition'] = composition_hold
-    except KeyError:
+
+    except:
         # recover to previous state, set to values before calibration
         photon_shutter_try = 0
         number_shutter_tries = 5
@@ -503,7 +442,7 @@ def get_calibration_images (calibrant, wavelength, calibration_scan_exposure_tim
     LAST_CALIB_UID = calib_scan_header.start.uid
 
 
-def get_light_images(scan_time=1.0, scan_exposure_time=0.5,  comments=[], number_shutter_tries=5):
+def get_light_images(scan_time=1.0, scan_exposure_time=0.2,  comments='', number_shutter_tries=5):
     '''function for getting a light image
 
     Arguments:
@@ -518,8 +457,15 @@ def get_light_images(scan_time=1.0, scan_exposure_time=0.5,  comments=[], number
     #cs700 = _bluesky_cs700()
     if comments:
         #extra_key = comments.keys()
-        for value in comments:
-            gs.RE.md['comments_gli'] = value
+        #for value in comments:
+        try:
+            gs.RE.md['comments']
+            comments_hold = copy.copy(gs.RE.md['comments'])
+        except KeyError:
+            gs.RE.md['comments'] = {}
+        
+        gs.RE.md['comments']['light'] = comments
+    
     # test if parent layers exitst
     try:
         gs.RE.md['scan_info']
@@ -528,11 +474,6 @@ def get_light_images(scan_time=1.0, scan_exposure_time=0.5,  comments=[], number
         gs.RE.md['scan_info']={}
         gs.RE.md['sample'] = {}
     # Prpare hold values, KeyError means blanck state, just pass it
-    #try:
-        #scan_type_hold = copy.copy(gs.RE.md['scan_info']['scan_type'])
-    #except KeyError:
-        #scan_type_hold =''
-        #pass
     try:
         scan_steps_hold = gs.RE.md['scan_info']['number_of_exposures']
     except KeyError:
@@ -553,20 +494,18 @@ def get_light_images(scan_time=1.0, scan_exposure_time=0.5,  comments=[], number
     # don't expose the PE for more than 5 seconds max, set it to 1 seconds if you go beyond limit
     if scan_exposure_time > 5.0:
         print('Your exposure time is larger than 5 seconds. This can damage detector')
-        print('Exposure time is set to 4 seconds')
+        print('Exposure time is set to 5 seconds')
         print('Number of exposures will be recalculated so that scan time is the same....')
-        scan_exposure_time = 4.0
-        num = int(scan_time/scan_exposure_time)
+        scan_exposure_time = 5.0
+        num = int(np.rint(scan_time/scan_exposure_time))
     else:
-        num = int(scan_time/scan_exposure_time)
+        num = int(np.rint(scan_time/scan_exposure_time))
     print('Number of exposures is now %s' % num)
     if num == 0: num = 1 # at least one scan
     
     #configure pe1:
     scan_exposure_time_hold = copy.copy(pe1.acquire_time)
     pe1.acquire_time = scan_exposure_time
-    #pe1_num_images_hold = copy.copy(pe1.num_images)
-    #pe1.num_images = num # increase frames per point
 
     # set up scan definition
     scan = bluesky.scans.Count([pe1],num)
@@ -587,7 +526,7 @@ def get_light_images(scan_time=1.0, scan_exposure_time=0.5,  comments=[], number
 
     # this logic needed when we are using photon shutter at xpd
     print('photon_shutter value before open_pv.put(1): %s' % photon_shutter.value)
-    # open the damn shutter
+    # open photon shutter
     photon_shutter_try = 0
     while photon_shutter.value == 0 and photon_shutter_try < number_shutter_tries:
         photon_shutter.open_pv.put(1)
@@ -598,8 +537,6 @@ def get_light_images(scan_time=1.0, scan_exposure_time=0.5,  comments=[], number
         print('photon shutter failed to open after %i tries. Please check before continuing' % photon_shutter)
         return
     
-    
-    # Obtain detector
     try:
         gs.RE(scan)
         #try:
@@ -614,16 +551,6 @@ def get_light_images(scan_time=1.0, scan_exposure_time=0.5,  comments=[], number
             print('photon_shutter value after close_pv.put(1): %s' % photon_shutter.value)
             photon_shutter_try += 1
         
-        #print('photon_shutter value after close_pv.put(1): %s' % photon_shutter.value)
-        #header = db[-1]
-        #feature = _feature_gen(header)
-        #filename = _filename_gen(header)
-        # let's not save every scan unless needed
-        #save_tif(header, sum_frames=True)
-        #deconstruct the metadata
-        #gs.RE.md['scan_info'] ={'scan_exposure_time': scan_exposure_time_hold,'number_of_exposures': scan_steps_hold, 'total_scan_duration':total_scan_duration_hold, 'scan_type': scan_type_hold}
-        #gs.RE.md['user_supply'] = {}
-        #gs.RE.md['sample']['temperature'] = temp_hold
     except:
         # deconstruct the metadata
         #try:
@@ -640,13 +567,17 @@ def get_light_images(scan_time=1.0, scan_exposure_time=0.5,  comments=[], number
             photon_shutter_try += 1
 
         gs.RE.md['scan_info'] = {'scan_exposure_time' : scan_exposure_time_hold,'number_of_exposures' : scan_steps_hold, 'total_scan_duration' : total_scan_duration_hold }
-        gs.RE.md['user_supply'] = {}
+        gs.RE.md['comments'] = {}
         gs.RE.md['sample']['temperature'] = temp_hold
         print('image collection failed. Check why gs.RE(scan) is not working and rerun')
         return
 
+def nstep(start, stop, step_size):
+    step = np.arange(start, stop, step_size)
+    return np.append(step, stop)
 
-def tseries(start_temp, stop_temp, step_size = 5.0, total_scan_time_per_point =1.0, exposure_time_per_point = 0.2, comments = [], correction_option = True):
+
+def tseries(start_temp, stop_temp, step_size = 5.0, total_exposure_time_per_point =1.0, exposure_time_per_frame = 0.2, t_device = cs700, comments = ''):
     ''' run a temperature series scan.
 
     argument:
@@ -656,36 +587,46 @@ def tseries(start_temp, stop_temp, step_size = 5.0, total_scan_time_per_point =1
     total_scan_time_per_point - float - optional. total scan time at each temepratrue step
     exposure_time_per_point - flot - optional. exposure time per frame.
     comments - list - optional. comments to current experiment. It should be a list of strings
-    correction - bool - optional. option to see if we want to perform dark_correction to tif that are gonna be saved
+    correction_option - bool - optional. option to see if we want to perform dark_correction to tif that are gonna be saved
     '''
-    
-    if comments:
-        temp_comments = comments
-    else:
-        pass
-    
-    temp_series = np.arange(start_temp + step_size, stop_temp + step_size, step_size)
-    #temp_series = np.arange(start_temp, stop_temp, step_size)
-    print('Temperature series will cove these points %s' % str(temp_series))
-    
-    #confirm = input('Is this series your desired range? (Y/n)')
-    #if confirm == 'y' or '':
-        #pass
-    #else:
-        #print('Ok, please adjust your start_temp, stop_temp and then rerun again')
-        #return
+    import uuid
 
-    for temp in temp_series:
-        mov(cs700, temp)
-        temp = cs700.value[1] # real temperature
-        gs.RE.md['sample']['temp'] = temp
-        get_light_images(total_scan_time_per_point, exposure_time_per_point, temp_comments)
-        # take care of file name in temperature scan
-        header = db[-1]
-        f_name = '_'.join(feature_gen(header), str(temp)+'K')
-        save_tif(db[-1], tif_name = f_name, dark_correction = correction_option)
+    temp_series = nstep(start_temp, stop_temp, step_size) 
+    print('Temperature series will cover these points %s' % str(temp_series))
+    print('Ctrl + c to exit if it is incorrect')
+    print('To view data from intermidate scans, open a new icollection session')
+    print('type "from xpdacquire.xpdacquirefuncs import *"')
+    print('type "save_tif(db[-1])"')
+    print('then use xPDFsuite or program of choice to investigate')
+    print('DO NOT ENTER ANY MOTOR COMMANDS IN NEW IPYTHON SESSION, that will ruin your scan')
 
-    print('Temperature scan finished...')
+    md_hold = copy.copy(gs.RE.md)
+    try:
+        gs.RE.md['istseries'] = True
+        tseries_uid = str(uuid.uuid4())
+        gs.RE.md['tseries'] = {}
+        gs.RE.md['tseries']['start_time'] = time.time()
+        gs.RE.md['tseries']['uid'] = tseries_uid
+        gs.RE.md['tseries']['start'] = start_temp
+        gs.RE.md['tseries']['stop'] = stop_temp
+        gs.RE.md['tseries']['step_size'] = step_size
+        gs.RE.md['tseries']['device'] = str(t_device)
+        for temp in temp_series:
+            mov(t_device, temp)
+            actual_temp = t_device.value[1] # real temperature
+            gs.RE.md['sample']['temp'] = actual_temp
+            get_light_images(total_exposure_time_per_point, exposure_time_per_frame, comments)
+            header = db[-1]
+            # take care of file name in temperature scan
+            #header = db[-1]
+            #f_name = '_'.join(feature_gen(header), str(temp)+'K')
+            #save_tif(db[-1], tif_name = f_name, dark_correction = correction_option)
+        gs.RE.md = md_hold
+        print('Temperature scan finished...')
+
+    except:
+        print('Error or keybord interupt. Please try again')
+        gs.RE.md = md_hold
     return
 
 
@@ -768,13 +709,18 @@ def load_calibration(config_file = False, config_dir = False):
     print('Type gs.RE.md to check if config data has been stored properly')
     print('Run load_calibration() again to update/switch your config file')
 
-def new_experimenters(experimenters):
+def new_experimenters(experimenters, update=True):
     ''' This function sets up experimenter name(s). This function can be run at anytime to change experimenter global setting
     Argument:
         experimenters - str or list - name of current experimenters
+        update - bool - optional. set True to update experimenters list and set False to extend experimenters list
     '''
     #gs = _bluesky_global_state()
-    gs.RE.md['experimenters'] = experimenters
+    if update:
+        gs.RE.md['experimenters'] = experimenters
+    else:
+        gs.RE.md['experimenters'].extend(experimenters)
+
     print('Current experimenters is/are %s' % experimenters)
     print('To update metadata dictionary, rerun new_sample() or new_experimenters(), with desired information as the argument')
 
@@ -801,7 +747,7 @@ def composition_dict_gen(sample):
     return compo_dict_list
 
 
-def new_sample(sample_name, sample, experimenters=[], comments=[''], verbose = 1):
+def new_sample(sample_name, sample, experimenters=[], comments='', verbose = 1):
     '''set up metadata fields for your runengine
 
     This function sets up persistent metadata that will be saved with subsequent scans,
@@ -855,200 +801,14 @@ def new_sample(sample_name, sample, experimenters=[], comments=[''], verbose = 1
     sample_name_list = [ el for el in sample if isinstance(el, str)]
     gs.RE.md['sample_name'] = sample_name
     print('Current sample_name_list is "%s"\ncomposition dictionary is "%s"' % (sample_name_list, composition_dict_gen(sample)))
-    '''
-    if not composition:
-        try:
-            gs.RE.md['sample']['composition']
-        except KeyError:
-            composition = []
-        print('Current sample composition is %s' % composition)
-    else:
-        gs.RE.md['sample']['composition'] = composition
-        print('Current sample composition is %s' % composition)
-    '''
     print('To change experimenters or sample, rerun new_user() or new_sample() respectively, with desired experimenter list as the argument')
-    
-    #gs.RE.md['sample_name'] = sample_name
-    time_stub = _timestampstr(time.time())
-
-    # try to set up parent layer
-    try:
-        gs.RE.md['sample']
-    except KeyError:
-        gs.RE.md['sample'] = {}
-    #gs.RE.md['sample_name'] = sample_name
-    #print('Current sample name is %s' % sample_name)
-    #gs.RE.md['sample']['composition'] = composition
-    #print('Current sample composition is "%s"' % composition)
+  
     time_stub = _timestampstr(time.time())
     gs.RE.md['sample']['sample_load_time'] = time_stub
     if verbose: print('sample_load_time has been recorded: %s' % time_stub)
     print('To update metadata dictionary, re-run new_sample() or new_experimenters()')
    # if verbose: print('Sample and experimenter metadata have been set')
     if verbose: print('To check what will be saved with your scans, type "gs.RE.md"')
-
-#### block of search functions ####
-def get_keys(fuzzy_key, d=None, verbose=0):
-    ''' fuzzy search on key names contains in a nested dictionary.
-    Return all possible key names starting with fuzzy_key
-:
-    Arguments:
-
-    fuzzy_key - str - possible key name, can be fuzzy like 'exp', 'sca' or nearly complete like 'experiment'
-    d        -- dictionary you want to search.  Use bluesky metadata store
-                when not specified.
-    '''
-    if d is None:
-        #d = _bluesky_metadata_store()
-        d = gs.RE.md
-    if hasattr(d,'items'):
-        rv = [f for f in d.keys() if f.startswith(fuzzy_key)]
-        if not verbose: print('Possible key(s) to your search is %s' % rv)
-        return rv
-        get_keys(fuzzy_key, d.values())
-
-
-def get_keychain(wanted_key, d=None):
-    ''' Return keychian(s) of specific key(s) in a nested dictionary
-
-    argumets:
-    wanted_key - str - name of key you want to search for
-    d        -- dictionary you want to search.  Use bluesky metadata store
-                when not specified.
-    '''
-    if d is None:
-        #d = _bluesky_metadata_store()
-        d = gs.RE.md
-    for k, v in d.items():
-        if isinstance(v, dict):
-            result = get_keychain(wanted_key, v) # dig in nested element
-            if result:
-                return [k]+ result
-        elif k == wanted_key:
-            return [k]
-
-
-def set_value(key, d=None):
-    ''' Return the last parent dictionary of key. It is convenient to set metadata value
-
-    arguments:
-    key - str - name of key you want to search for
-    d        -- dictionary you want to search.  Use bluesky metadata store
-                when not specified.
-    '''
-    if d is None:
-        d = gs.RE.md
-    keychain = get_keychain(key)
-    keychain.remove(key)
-    d0 = {} # copy information
-    for k, v in d.items():
-        d0[k]=v
-    out = {}
-    while True:
-        if keychain:
-            #keychain = get_keychain(key)
-            keychain.reverse()
-            try:
-                key_pop = keychain.pop()
-                out.update(d0[key_pop])
-            except IndexError:
-                out.update(d0)
-        else:
-            break
-    return out
-
-
-def build_keychain_list(key_list, d=None, verbose = 1):
-    ''' Return a keychain list that yields all parent keys for every key in key_list
-        E.g. d = {'layer1':{'layer2':{'mykey':'value'}}}
-            build_keychain_list([layer2, mykey],d) = ['layer1', 'layer1.layer2']
-    argumets:
-    key_list - str or list - name of key(s) you want to search for
-    d        -- dictionary you want to search.  Use bluesky metadata store
-                when not specified.
-    '''
-    if d is None:
-        #d = _bluesky_metadata_store()
-        d = gs.RE.md
-    result = []
-    if isinstance(key_list, str):
-        key_list_operate = []
-        key_list_operate.append(key_list)
-    elif isinstance(key_list, list):
-        key_list_operate = key_list
-
-    for key in key_list_operate:
-        dummy = get_keychain(key)
-        if dummy:
-            if len(dummy) > 1:
-                path = '.'.join(dummy)
-                result.append(path)
-            elif len(dummy) == 1: # key at first level
-                path = dummy[0]
-                result.append(path)
-        else:  # find an empty dictionary
-            path = key
-            result.append(path)
-        if verbose:
-            print('keychain to your desired key %s is "%s"' % (key, path))
-        else:
-            pass
-    return result
-
-def search(desired_value, *args, **kwargs):
-    '''Return all possible header(s) that satisfy your searching criteria
-
-    this function operates in two logics:
-    1) When desired_value and args are both given. It will search on all headers matches args = desired_value.
-        args can be incomplete and in this case, this function yields multiple searches
-
-    example:
-    desired_value = 'TiO2'
-    search(desired_value, *'sa') will return all headers that has keys starting with 'sa' and its corresponding
-    values is 'TiO2' in metadata dictionary. Nanmely, it yields searchs on headers with sample = TiO2, sadness = TiO2 ...
-
-    2) When desired_value is not given. It implies you already knew your searching criteria and are ready to type them explicitly,
-        even with additional constrains.
-
-    example:
-    desired_value = 'TiO2'
-    search (False, **{'sample_name':desired_value, 'additonal_field': 'additional_value ....}) will return
-    headers that have exactly key pairs **{'sample_name':desired_value, 'additonal_field': 'additional_value ....}
-
-    General stratege is to use the first logic to figure out what is your desired key.
-    Then user the second logic to restrain your search
-
-    arguments:
-    desired_value - str - desired value you are looking for
-    args - str - key name you want to search for. It can be fuzzy or complete. If it is fuzzy, all possibility will be listed.
-    kwargs - dict - an dictionary that contains exact key-value pairs you want to search for
-
-    '''
-    if desired_value and args:
-        possible_keys = get_keys(args)
-        keychain_list = build_keychain_list(possible_keys, verbose =0)
-        search_header_list = []
-        for i in range(len(keychain_list)):
-            dummy_search_dict = {}
-            dummy_search_dict[keychain_list[i]] = desired_value
-            dummy_search_dict['group'] = 'XPD' # create an anchor as mongoDB and_search needs at least 2 key-value pairs
-            search_header = db(**dummy_search_dict)
-            search_header_list.append(search_header)
-            print('Your %ith search "%s=%s" yields %i headers' % (i,
-                keychain_list[i], desired_value, len(search_header)))
-            return search_header_list
-    elif not desired_value and kwars:
-        if len(kwargs)>1:
-            search_header = db(**kwargs)
-        elif len(kwargs) == 1:
-            kwargs['group'] = 'XPD'
-            search_header = db(**kwargs)
-        else:
-            print('You gave empty search criteria. Please try again')
-            return
-        return search_header
-    else:
-        print('Sorry, your search is somehow unrecongnizable. Please make sure you are putting values to right fields')
 
 def view_image(headers=False):
     if not headers:
@@ -1064,111 +824,6 @@ def view_image(headers=False):
         img_len = np.array(get_images(header,'pe1_image_lightfield')).shape[0]
         sum_img = np.sum(np.array(get_images(header,'pe1_image_lightfield')),0) / img_len
         imshow(sum_img)
-
-
-def table_gen(headers):
-    ''' Takes in a header list generated by search functions and return a table
-    with metadata information
-
-    Argument:
-    headers - list - a list of bluesky header objects
-
-    '''
-    plt_list = list()
-    feature_list = list()
-    comment_list = list()
-    uid_list = list()
-
-    if type(list(headers)[0]) == str:
-        header_list = []
-        header_list.append(headers)
-    else:
-        header_list = headers
-
-    for header in header_list:
-        #feature = _feature_gen(header)
-        #time_stub = _timestampstr(header.stop.time)
-        #header_uid = header.start.uid
-        #uid_list.append(header_uid[:5])
-        #f_name = "_".join([time_stub, feature])
-        f_name =filename_gen(header)
-        feature_list.append(f_name)
-
-        try:
-            comment_list.append(header.start['comments'])
-        except KeyError:
-            comment_list.append('None')
-        try:
-            uid_list.append(header.start['uid'][:5])
-        except KeyError:
-            # jsut in case, it should never happen
-            print('Some of your data do not even have a uid, it is very dangerous, please contact beamline scientist immediately')
-    plt_list = [feature_list, comment_list] # u_id for ultimate search
-    inter_tab = pd.DataFrame(plt_list)
-    tab = inter_tab.transpose()
-    tab.columns=['Features', 'Comments' ]
-
-    return tab
-
-
-def time_search(startTime,stopTime=False,exp_day1=False,exp_day2=False):
-    '''return list of experiments run in the interval startTime to stopTime
-
-    this function will return a set of events from dataBroker that happened
-    between startTime and stopTime on exp_day
-
-    arguments:
-    startTime - datetime time object or string or integer - time a the beginning of the
-                period that you want to pull data from.  The format could be an integer
-                between 0 and 24 to set it at a  whole hour, or a datetime object to do
-                it more precisely, e.g., datetime.datetime(13,17,53) for 53 seconds after
-                1:17 pm, or a string in the time form, e.g., '13:17:53' in the example above
-    stopTime -  datetime object or string or integer - as starTime but the latest time
-                that you want to pull data from
-    exp_day - str or datetime.date object - the day of the experiment.
-    '''
-    # date part
-    if exp_day1:
-        if exp_day2:
-            d0 = exp_day1
-            d1 = exp_day2
-        else:
-            d0 = exp_day1
-            d1 = d0
-    else:
-        d0 = datetime.datetime.today().date()
-        d1 = d0
-
-    # time part
-    if stopTime:
-
-        t0 = datetime.time(startTime)
-        t1 = datetime.time(stopTime)
-
-    else:
-        now = datetime.datetime.now()
-        hr = now.hour
-        minu = now.minute
-        sec = now.second
-        stopTime = datetime.time(hr,minu,sec) # if stopTime is not specified, set current time as stopTime
-
-        t0 = datetime.time(startTime)
-        t1 = stopTime
-
-    timeHead = str(d0)+' '+str(t0)
-    timeTail = str(d1)+' '+str(t1)
-
-    header_time=db(start_time=timeHead,
-                   stop_time=timeTail)
-
-    event_time = get_events(header_time, fill=False)
-    event_time = list(event_time)
-
-    print('||You assign a time search in the period:\n'+str(timeHead)+' and '+str(timeTail)+'||' )
-    print('||Your search gives out '+str(len(header_time))+' results||')
-
-    return header_time
-
 
 def sanity_check():
     #gs = _bluesky_global_state()
@@ -1213,14 +868,6 @@ def print_dict(d, ident = '', braces=1):
 
 def print_metadata():
     print_dict(gs.RE.md)
-
-
-def _timestampstr(timestamp):
-    time= str(datetime.datetime.fromtimestamp(timestamp))
-    date = time[:10]
-    hour = time[11:16]
-    timestampstring = '_'.join([date, hour])
-    return timestampstring
 def _clean_metadata():
     '''
     reserve for completely cleaning metadata dictionary
@@ -1233,250 +880,6 @@ def _clean_metadata():
     gs.RE.md['sample'] = {}
 
 def save_tif(headers, tif_name = False, sum_frames = True, dark_uid = False, dark_correct = True):
-    ''' save images obtained from dataBroker as tiff format files. It returns nothing.
-
-    arguments:
-        headers - list - a list of header objects obtained from a query to dataBroker
-        file_name - str - optional. File name of tif file being saved. default setting yields a name made of time, uid, feature of your header
-        sum_frames - bool - optional. when it is set to True, image frames contained in header will be summed as one file
-        dark_uid - str - optional. The uid of dark_image you wish to use. If unspecified, the most recent dark stack in dark_base will beused.
-    '''
-    # prepare header
-    if type(list(headers)[1]) == str:
-        header_list = list()
-        header_list.append(headers)
-    else:
-        header_list = headers
-
-    # iterate over header(s)
-    for header in header_list:
-        print('Plotting and saving your dark-corrected image(s) now....')
-        # get images and exposure time from headers
-        try:
-            img_field =[el for el in header.descriptors[0]['data_keys'] if el.endswith('_image_lightfield')][0]
-            print('Images are pulling out from %s' % img_field)
-            light_imgs = np.array(get_images(header,img_field))
-        except IndexError:
-            uid = header.start.uid
-            print('This header with uid = %s does not contain any image' % uid)
-            print('Was area detector correctly mounted then?')
-            print('Stop saving')
-            return
-            
-        # get events from header
-        header_events = list(get_events(header))
-        cnt_time_field = [ el for el in header_events[0]['data'] if el.endswith('acquire_time') ][0]
-        cnt_time = header_events[0]['data'][cnt_time_field]
-        print('cnt_time = %s' % cnt_time)
-        
-        # Identify the latest dark stack
-        if not dark_uid:
-            try:
-                LAST_DARK_UID # see if LAST_DARK_UID global variable exits
-                dark_header = db[str(LAST_DARK_UID)]
-            except NameError:
-                #uid_list = [] # get uid from dark_base
-                pass
-            f_d = [ f for f in os.listdir(D_DIR) ]
-            if not f_d:
-                print('You do not have any dark image in dark_base, please at least do one dark scan before all scans')
-                print('tif file will be saved without dark correction')
-                dark_correct = False
-            else:
-                pass
-
-            uid_list = []
-            for f in f_d:
-                uid_list.append(f[17:22])
-            uid_unique = np.unique(uid_list)
-            dark_header_list = []
-            for d_uid in uid_unique:
-                dark_header_list.append(db[d_uid])
-            dark_time_list = []
-            for dark_header in dark_header_list:
-                dark_time_list.append(dark_header.stop.time)
-            ind = np.argsort(dark_time_list)
-            dark_header = dark_header_list[ind[-1]]
-        else:
-            dark_header = db[str(dark_uid)]
-
-        dark_events = list(get_events(dark_header))
-        dark_cnt_time_field = [ el for el in dark_events[0]['data'] if el.endswith('acquire_time') ][0]
-        dark_cnt_time = dark_events[0]['data'][dark_cnt_time_field]
-        print('we are using dark header with uid = %s' % dark_header.start.uid)
-        print('dark_cnt_time = %s' % dark_cnt_time)
-
-        # dark correction
-        dark_num = np.ceil(cnt_time / dark_cnt_time) # how many dark framesneeded for single light image, round up
-        if dark_num ==0: dark_num=1
-        dark_num_ratio = (cnt_time / dark_cnt_time) # real ratio
-        print('Number of dark images applied to correction your image(s) is: %i....' % dark_num)
-        dark_img_field =[el for el in dark_header.descriptors[0]['data_keys'] if el.endswith('_image_lightfield')][0]
-        dark_img_list = np.array(get_images(dark_header,dark_img_field)) # confirmed that it comes with reverse order
-        dark_len = dark_img_list.shape[0]
-        dark_amount = np.sum(dark_img_list[dark_len-dark_num:dark_len],0)*(dark_num_ratio/dark_num)
-        #print(dark_amount)
-        #if np.isnan(dark_amount).any():
-            #print('we have nan in dark_amount')
-            #return
-        #else:
-            #print('we do not have nan in dark_amount')
-        #print(max(dark_amount))
-        correct_imgs = []
-        for i in range(light_imgs.shape[0]):
-            #print(light_imgs[i])
-            if dark_correct:
-                dummy = (light_imgs[i]-dark_amount)
-            #print('corrected image intensity is %s',str(dummy))
-            else:
-                dummy = light_imgs[i] # raw image, no correction
-            correct_imgs.append(dummy)
-            
-        scan_type = header.start.scan_type
-        if scan_type != 'Count':
-            sum_frames = False
-        else:
-            pass
-
-        if sum_frames:
-            if not tif_name:
-                header_uid = header.start.uid[:5]
-                time_stub = _timestampstr(header.stop.time)
-                feature = feature_gen(header)
-                f_name ='_'.join([time_stub, header_uid, feature+ '.tif'])
-            else:
-                f_name = tif_name
-
-            w_name = os.path.join(W_DIR,f_name)
-            img = np.sum(correct_imgs,0)/len(correct_imgs)
-            #if np.isnan(img).any():
-                #print('we have nan in summed img')
-            #else:
-                #print('we do not have nan in summed img')
-                #pass
-            try:
-                fig = plt.figure(f_name)
-                plt.imshow(img)
-                plt.show()
-            except TypeError:
-                print('This is a squashed tif')
-            imsave(w_name, img) # overwrite mode now !!!!
-            if os.path.isfile(w_name):
-                print('dark corrected image "%s" has been saved at "%s"' % (f_name, W_DIR))
-            else:
-                print('Sorry, something went wrong with your tif saving')
-                return
-
-        else:
-            if scan_type == 'Count':  #fixme: is Count the only one doesn't move motor?
-                for i in range(len(header_events)):
-                    if not tif_name:
-                        header_uid = header.start.uid[:5]
-                        time_stub =_timestampstr(header_events[i]['timestamps'][img_field])
-                        feature = feature_gen(header)
-                        f_name ='_'.join([time_stub, header_uid, feature, '00'+str(i)+'.tif'])
-                        #f_name = '_'.join([_filename_gen(header),'00'+str(i)+'.tif'])
-                        #f_name = '_'.join(header_filename, '00'+str(i)+'.tif')
-                    else:
-                        f_name = tif_name + '_00' + str(i) +'.tif'
-                    w_name = os.path.join(W_DIR,f_name)
-                    img = correct_imgs[i]
-                    if np.isnan(img).any():
-                        print('we have nan in indivisual img')
-                    else:
-                        print('we do not have nan in indivisual img')
-                        pass
-                    if len(correct_imgs) <5:
-                        try:
-                            fig = plt.figure(f_name)
-                            plt.imshow(img)
-                            plt.show()
-                        except TypeError:
-                            pass
-                    else:
-                        #print('There are more than 5 images in this header, will not plot now for saving computation resource/')
-                        #print('You can view these images after they are saved')
-                        pass
-                    
-                    imsave(w_name, img) # overwrite mode now !!!!
-                    if os.path.isfile(w_name):
-                        print('dark corrected %s has been saved at %s' % (f_name, W_DIR))
-                    else:
-                        print('Sorry, something went wrong with your tif saving')
-                        return
-
-
-            else:
-                print('This is a motor scan, frames will be saved seperately..')
-                # is a motor scan now, get motor name
-                motor_name = eval(header.start.motor).name
-                motor_series = get_motor(header,motor_name)
-                for i in range(len(header_events)): # length of light images should be as long as temp series
-                    if not tif_name:
-                        header_uid = header.start.uid[:5]
-                        time_stub =_timestampstr(header_events[i]['timestamps'][img_field])
-                        feature = feature_gen(header)
-                        motor_step = str(motor_series[i])
-                        f_name ='_'.join([time_stub, header_uid, feature, motor_step, '00'+str(i)+'.tif'])
-                        #f_name = '_'.join([_filename_gen(header),'00'+str(i)+'.tif'])
-                        #f_name = '_'.join(header_filename, '00'+str(i)+'.tif')
-                    else:
-                        f_name ='_'.join([tif_name, motor_step, '00'+str(i)+'.tif'])
-                    w_name = os.path.join(W_DIR,f_name)
-                    img = correct_imgs[i]
-                    if len(correct_imgs)<5:
-                        try:
-                            fig = plt.figure(f_name)
-                            plt.imshow(img)
-                            plt.show()
-                        except TypeError:
-                            pass
-                    else:
-                        #print('There are more than 5 images in this header, will not plot now for saving computation resource/')
-                        #print('You can view these images after they are saved')
-                        pass
-                    imsave(w_name, img) # overwrite mode now !!!!
-                    if os.path.isfile(w_name):
-                        print('dark corrected %s has been saved at %s' % (f_name, W_DIR))
-                    else:
-                        print('Sorry, something went wrong with your tif saving')
-                        return
-
-        
-        # write config data
-        print('Writing config file used in header....')
-        f_name = None # clear value and re-assign it as we don't need to save multiple files
-        #f_name = '_'.join([time_stub, uid, feature+'.cfg'])
-        f_name = filename_gen(header) + '.cfg'
-        config_f_name = '_'.join(['config', f_name])
-        config_w_name = os.path.join(W_DIR, config_f_name)
-        try:
-            config_dict = header.start['calibration_scan_info']['calibration_information']['config_data']
-            if isinstance(config_dict, dict):
-                pass
-            else:
-                print('Your config data is not a dictionary, please make sure you load your config file properly')
-                print('User load_calibration() and then try again.')
-                print('Stop saving')
-                return
-            write_config(config_dict, config_w_name)
-            if os.path.isfile(config_w_name):
-                print('%s has been saved at %s' % (config_f_name, W_DIR))
-        except KeyError:
-            print('It seems there is no config data in your metadata dictioanry or it is at wrong dictionary')
-            print('User load_calibration() and then try again.')
-            print('Stop saving')
-
-        print('Writing metadata stored in header....')
-        metadata = [ info for info in gs.RE.md if info != 'calibration_scan_info']
-        md_f_name = filename_gen(header)+'.txt'
-        md_w_name = os.path.join(W_DIR, md_f_name)
-        with open(md_w_name, 'w') as f:
-            json.dump(metadata, f)
-        if os.path.isfile(md_w_name):
-                print('%s has been saved at %s' % (md_f_name, W_DIR))
-
-def save_tif_test(headers, tif_name = False, sum_frames = True, dark_uid = False, dark_correct = True):
     ''' save images obtained from dataBroker as tiff format files. It returns nothing.
 
     arguments:
@@ -1685,6 +1088,8 @@ def save_tif_test(headers, tif_name = False, sum_frames = True, dark_uid = False
             json.dump(metadata, f)
         if os.path.isfile(md_w_name):
                 print('%s has been saved at %s' % (md_f_name, W_DIR))
+        else:
+            print('Something went wrong when saving your metadata locally. Do not worry, it is still saved remotely in centralized filestore')
 
 def get_motor(header, motor_name):
     ''' Return motor serises in a header
@@ -1711,16 +1116,6 @@ def get_motor(header, motor_name):
     except KeyError:
         print('There is no motor information to %s in this header, please check if you are looking at the correct data' % motor_name)
         return
-
-def run_script(script_name):
-    ''' Run user script in script base
-
-    argument:
-    script_name - str - name of script user wants to run. It must be sit under script_base to avoid confusion when asking Python to run script.
-    '''
-    module = script_name
-    m_name = os.path.join('S_DIR', module)
-    #%run -i $m_name
 
 def find_dark(light_cnt_time):
     '''find desired cnt_time in dark_base'''
