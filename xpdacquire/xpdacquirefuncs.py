@@ -587,7 +587,6 @@ def tseries(start_temp, stop_temp, step_size = 5.0, total_exposure_time_per_poin
     total_scan_time_per_point - float - optional. total scan time at each temepratrue step
     exposure_time_per_point - flot - optional. exposure time per frame.
     comments - list - optional. comments to current experiment. It should be a list of strings
-    correction_option - bool - optional. option to see if we want to perform dark_correction to tif that are gonna be saved
     '''
     import uuid
 
@@ -629,6 +628,69 @@ def tseries(start_temp, stop_temp, step_size = 5.0, total_exposure_time_per_poin
         gs.RE.md = md_hold
     return
 
+
+def myMotorscan(start, stop, step_size, exposure_time_per_point = 1.0, exposure_time_per_frame = 0.2, motor, det):
+    step_series = ntstep(start, stop, step_size)
+    if exposure_time_per_point > 5:
+        exposure_time_per_point = 5
+    exposure_num = np.rint(exposure_time_per_point/exposure_time_per_frame)
+    pe1.acquire_time = exposure_time_per_frame
+    yield Msg('open_run')
+    for step in step_series:
+        yield Msg('create')
+        yield Msg('set', motor, step, block_group = 'A')
+        yield Msg('wait', None, 'A')
+        yield Msg('read', motor)
+        yield Msg('trigger', det)
+        num = 0
+        while num < exposure_num:
+            yield Msg('read', det)
+            i +=1
+        yield Msg('save')
+    yield Msg('close_run')
+
+
+def Tseries(start_temp, stop_temp, step_size, exposure_time_per_point = 1.0, exposure_time_per_frame = 0.2, motor = cs700, det = pe1):
+    ''' run a temperature series scan.
+
+    argument:
+    start_temp - float - start point of your temperature scan
+    stop_temp - float - end point of your temperature scan
+    step_size - flot - optional. step size of each temeprature scan
+    total_scan_time_per_point - float - optional. total scan time at each temepratrue step
+    exposure_time_per_point - flot - optional. exposure time per frame.
+    comments - list - optional. comments to current experiment. It should be a list of strings
+    '''
+    Tscan = myMotorscan(start_temp, stop_temp, step_size, exposure_time_per_point,exposure_time_per_frame, motor, det)
+    
+    temp_series = nstep(start_temp, stop_temp, step_size) 
+    print('Temperature series will cover these points %s' % str(temp_series))
+    print('Ctrl + c to exit if it is incorrect')
+    print('To view data from intermidate scans, open a new icollection session')
+    print('type "from xpdacquire.xpdacquirefuncs import *"')
+    print('type "save_tif(db[-1])"')
+    print('then use xPDFsuite or program of choice to investigate')
+    print('DO NOT ENTER ANY MOTOR COMMANDS IN NEW IPYTHON SESSION, that will ruin your scan')
+
+    md_hold = copy.copy(gs.RE.md)
+    try:
+        gs.RE.md['istseries'] = True
+        #tseries_uid = str(uuid.uuid4())
+        gs.RE.md['tseries'] = {}
+        gs.RE.md['tseries']['start_time'] = time.time()
+        #gs.RE.md['tseries']['uid'] = tseries_uid
+        gs.RE.md['tseries']['start'] = start_temp
+        gs.RE.md['tseries']['stop'] = stop_temp
+        gs.RE.md['tseries']['step_size'] = step_size
+        gs.RE.md['tseries']['device'] = str(motor.name)
+        gs.RE(Tscan, LiveTable([str(motor),str(det)+'_image_lightfield']))
+        gs.RE.md = md_hold
+        print('Temperature scan finished...')
+
+    except:
+        print('Error or keybord interupt. Please try again')
+        gs.RE.md = md_hold
+    return
 
 def load_calibration(config_file = False, config_dir = False):
     '''Function loads calibration values as metadata to save with scans
