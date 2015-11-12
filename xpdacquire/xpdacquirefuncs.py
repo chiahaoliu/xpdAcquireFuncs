@@ -65,8 +65,8 @@ def _bluesky_RE():
     return RE
 
 def _bluesky_metadata_store():
-    Return the dictionary of bluesky global metadata.
-    
+    '''Return the dictionary of bluesky global metadata.
+    '''
     gs = _bluesky_global_state()
     return gs.RE.md
 
@@ -628,7 +628,7 @@ def tseries(start_temp, stop_temp, step_size = 5.0, total_exposure_time_per_poin
     return
 
 
-def myMotorscan(start, stop, step_size, exposure_time_per_point = 1.0, exposure_time_per_frame = 0.2, motor, det):
+def myMotorscan(start, stop, step_size, motor, det, exposure_time_per_point = 1.0, exposure_time_per_frame = 0.2):
     step_series = ntstep(start, stop, step_size)
     if exposure_time_per_point > 5:
         exposure_time_per_point = 5
@@ -649,7 +649,7 @@ def myMotorscan(start, stop, step_size, exposure_time_per_point = 1.0, exposure_
     yield Msg('close_run')
 
 
-def Tseries(start_temp, stop_temp, step_size, exposure_time_per_point = 1.0, exposure_time_per_frame = 0.2, motor = cs700, det = pe1):
+def Tseries(start_temp, stop_temp, step_size, motor = cs700, det = pe1, exposure_time_per_point = 1.0, exposure_time_per_frame = 0.2):
     ''' run a temperature series scan.
 
     argument:
