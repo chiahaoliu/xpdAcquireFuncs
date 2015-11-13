@@ -1,10 +1,4 @@
-argument:
-    start_temp - float - start point of your temperature scan
-    stop_temp - float - end point of your temperature scan
-    step_size - flot - optional. step size of each temeprature scan
-    total_scan_time_per_point - float - optional. total scan time at each temepratrue step
-    exposure_time_per_point - flot - optional. exposure time per frame.
-    comments - list - optional. comments to current experiment. It should be a list of strings####################################
+####################################
 #
 # copyright 2015 trustees of Columbia University in the City of New York
 #
