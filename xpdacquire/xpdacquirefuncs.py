@@ -560,6 +560,7 @@ def myMotorscan(start, stop, step_size, motor, det, exposure_time_per_point = 1.
     exposure_num = np.rint(exposure_time_per_point/exposure_time_per_frame)
     pe1.acquire_time = exposure_time_per_frame
     yield Msg('open_run')
+    yield MSg('configure',det)
     for step in step_series:
         yield Msg('create')
         yield Msg('set', motor, step, block_group = 'A')
@@ -571,6 +572,7 @@ def myMotorscan(start, stop, step_size, motor, det, exposure_time_per_point = 1.
             yield Msg('read', det)
             num +=1
         yield Msg('save')
+    yield Msg('deconfigure',det)
     yield Msg('close_run')
 
 
@@ -1170,94 +1172,116 @@ def get_dark_images_test(dark_scan_exposure_time = False):
     #pe1 = _bluesky_pe1()
     gs.RE.md['isdark'] = True
     dark_cnt_hold = copy.copy(pe1.acquire_time)
-    try:
-        gs.RE.md['dark_scan_info']
-    except KeyError:
-        gs.RE.md['dark_scan_info'] = {}
+    if not dark_scan_exposure_time:
+        try:
+            gs.RE.md['dark_scan_info']
+        except KeyError:
+            gs.RE.md['dark_scan_info'] = {}
     
-    print('Collecting your dark stacks now...')
-    pe1.acquire_time=0.1
-    dummy_scan = bluesky.scans.Count([pe1], num=10)  # to get rid of residual current
-    from bluesky import RunEngine
-    #testRE = RunEngine()
-    #gs.RE(dummy_scan)
-    dark_dict = {}
-    #try:
-    for i in range(1,5):
-        pe1.acquire_time = 0.1*i
-        dark_scan_expsoure = pe1.acquire_time
-        gs.RE.md['dark_scan_info'] = {'dark_scan_exposure_time':pe1.acquire_time}
+        print('Collecting your dark stacks now...')
+        pe1.acquire_time=0.1
+        dummy_scan = bluesky.scans.Count([pe1], num=10)  # to get rid of residual current
+        from bluesky import RunEngine
+        #testRE = RunEngine()
+        #gs.RE(dummy_scan)
+        dark_dict = {}
+        try:
+            _close_shutter()
+            #photon_shutter_try = 0
+	    #number_shutter_tries = 5
+            #while photon_shutter.value == 1 and photon_shutter_try < number_shutter_tries:
+                #photon_shutter.close_pv.put(1)
+                #time.sleep(4.)   
+                #print('photon_shutter value after close_pv.put(1): %s' % photon_shutter.value)
+                #photon_shutter_try += 1
+            #if photon_shutter.value == 1:
+                #print('photon shutter failed to close after %i tries. Please check before continuing' % photon_shutter_try)
+                #return
+            for i in range(1,5):
+                pe1.acquire_time = 0.1*i
+                dark_scan_expsoure = pe1.acquire_time
+                gs.RE.md['dark_scan_info'] = {'dark_scan_exposure_time':pe1.acquire_time}
 
-        #photon_shutter_try = 0
-        #number_shutter_tries = 5
-        #while photon_shutter.value == 1 and photon_shutter_try < number_shutter_tries:
-            #photon_shutter.close_pv.put(1)
-            #time.sleep(4.)   
-            #print('photon_shutter value after close_pv.put(1): %s' % photon_shutter.value)
-            #photon_shutter_try += 1
-        #if photon_shutter.value == 1:
-            #print('photon shutter failed to close after %i tries. Please check before continuing' % photon_shutter_try)
-            #return
-        _close_shutter()
-        ctscan = bluesky.scans.Count([pe1],num=1)
-        ctscan.subs = LiveTable(['pe1_image_lightfield'])
-        gs.RE(ctscan)
+                ctscan = bluesky.scans.Count([pe1],num=1)
+                ctscan.subs = LiveTable(['pe1_image_lightfield'])
+                gs.RE(ctscan)
         
+                # save tif to dark_base
+                #dark_base_header=db[-1]
+                #uid = dark_base_header.start.uid[:6]
+                #time_stub = _timestampstr(dark_base_header.stop.time)
+                #img = np.array(get_images(dark_base_header,'pe1_image_lightfield'))
+                print('image shape is '+ str(np.shape(img)))
+
+                #f_name = '_'.join([time_stub, uid, 'dark','00'+str(i)+'.tif'])
+                #w_name = os.path.join(D_DIR,f_name)
+                #imsave(w_name, img) # overwrite mode
         
-        # save tif to dark_base
-        dark_base_header=db[-1]
-        uid = dark_base_header.start.uid[:6]
-        time_stub = _timestampstr(dark_base_header.stop.time)
-        img = np.array(get_images(dark_base_header,'pe1_image_lightfield'))
-        print('image shape is '+ str(np.shape(img)))
-
-        f_name = '_'.join([time_stub, uid, 'dark','00'+str(i)+'.tif'])
-        w_name = os.path.join(D_DIR,f_name)
-        imsave(w_name, img) # overwrite mode
+                 # fill up dark_dict
+                dark_dict[pe1.acquire_time] = dark_base_header.start.uid
+           
+            gs.RE.md['isdark'] = False
+            pe1.quire_time = dark_cnt_hold
+                #if os.path.isfile(w_name):
+                    #print('%s has been saved to %s' % (f_name, D_DIR))
+                    #pass
+                #else:
+                    #print('Error: dark image tif file not written')
+                    #print('Investigate and re-run')
+                    #return
         
-        # fill up dark_dict
-        dark_dict[pe1.acquire_time] = dark_base_header.start.uid
+            dark_dict_name = '_'.join(['dark_base', _timestampstr(time.time())])
+            w_dark_dict_name =  os.path.join(D_DIR, dark_dict_name)
+            #print(dark_dict)
+            #save dark_dict for search later on
+            with open(w_dark_dict_name+'.txt', 'w') as w_dark:
+                json.dump(dark_dict, w_dark)
+            if os.path.isfile(w_dark_dict_name+'.txt'):
+                print('%s has been saved to %s' % (w_dark_dict_name, W_DIR))
+            else:
+                print('dark dictionary is not saved, please run get_dark_images() again')
+                return
 
-        gs.RE.md['isdark'] = False
-        pe1.quire_time = dark_cnt_hold
+        except:
+            gs.RE.md['isdark'] = False
+            pe1.acquire_time = dark_cnt_hold
 
-        if os.path.isfile(w_name):
-            print('%s has been saved to %s' % (f_name, D_DIR))
-            pass
-        else:
-            print('Error: dark image tif file not written')
-            print('Investigate and re-run')
+            _close_shutter()
+            print('Something went wrong, dark images acqusition was not complete. Please check everything and run get_dark_images() again')
+            #photon_shutter_try = 0
+            #number_shutter_tries = 5
+            #while photon_shutter.value == 1 and photon_shutter_try < number_shutter_tries:
+                #photon_shutter.close_pv.put(1)
+                #time.sleep(4.)   
+                #print('photon_shutter value after close_pv.put(1): %s' % photon_shutter.value)
+                #photon_shutter_try += 1
+	    #if photon_shutter.value == 1:
+                #print('photon shutter failed to close after %i tries. Please check before continuing' % photon_shutter_try)
+                #return
             return
-        
-    dark_dict_name = '_'.join(['dark_base', _timestampstr(time.time())])
-    w_dark_dict_name =  os.path.join(D_DIR, dark_dict_name)
-    print(dark_dict)
-    # save dark_dict for search later on
-    with open(w_dark_dict_name+'.txt', 'w') as w_dark:
-        json.dump(dark_dict, w_dark)
-    if os.path.isfile(w_dark_dict_name+'.txt'):
-        print('%s has been saved to %s' % (w_dark_dict_name, W_DIR))
+
     else:
-        print('dark dictionary is not saved, please run get_dark_images() again')
+        #just a functionality, not planning to deliver
+        pe1.acquire_time = dark_scan_exposure_time
+        ctscan = bluesky.scans.Count([pe1, num=1)
+        gs.RE(ctscan)
+        dark_dict_name = [f_name for f_name in os.listdir(D_DIR) if f_name.endswith('txt')]
+        dark_dict_list = []
+        for d in dark_dict_name:
+            dark_dict_list.append(os.path.join(D_DIR,d))
+        if not dark_dict_list:
+            print('There is no dark dictionary in dark_base. Pleas run get_dark_images() again to build dark_base')
+            return
+        last_dark_dict = sorted(dark_dict_list, key = os.path.getmtime) # find the lastest dark_dict
+        rv = last_dark_dict[-1]
+        #print(rv)
+        with open(rv) as f:
+            read_dict = json.load(f)
+        new_dict = {str(pe1.acquire_time) : str(ctscan.start.uid)}
+        read_dict.update(new_dict)
+        with open(read_dict,'w') as f:
+            json.dump(read_dict, f)
         return
-
-    #except NameError:
-        #gs.RE.md['isdark'] = False
-        #pe1.acquire_time = dark_cnt_hold
-
-        #_close_shutter()
-        #print('Something went wrong, dark images acqusition was not complete. Please check everything and run get_dark_images() again')
-        #return
-        #photon_shutter_try = 0
-        #number_shutter_tries = 5
-        #while photon_shutter.value == 1 and photon_shutter_try < number_shutter_tries:
-            #photon_shutter.close_pv.put(1)
-            #time.sleep(4.)   
-            #print('photon_shutter value after close_pv.put(1): %s' % photon_shutter.value)
-            #photon_shutter_try += 1
-        #if photon_shutter.value == 1:
-            #print('photon shutter failed to close after %i tries. Please check before continuing' % photon_shutter_try)
-            #return
 
 def _close_shutter():
     photon_shutter_try = 0
