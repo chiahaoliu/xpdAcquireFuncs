@@ -159,7 +159,7 @@ def write_config(d, config_f_name):
     argument:
     d - dict - a dictionary that stores config data
     f_name - str - name of your config_file, usually is 'config+tif_file_name.cfg'
-'''
+    '''
     # temporarily solution, need a more robust one later on
     import configparser
     config = configparser.ConfigParser()
@@ -302,10 +302,25 @@ def time_search(startTime,stopTime=False,exp_day1=False,exp_day2=False):
 
 
 #### block of search functions ####
+def _list_keys( d, container):
+    ''' list out all keys in dictionary, d
+    Argument:
+        d - dict - input dictionary
+        containter - list - auxiliary list
+    '''
+    if isinstance(d, dict):
+        # append keys in the first layer
+        container += d.keys()
+        # add keys in next layer
+        list(map(lambda x: _list_keys(x, container), d.values()))
+    elif isinstance(d, list):
+        list(map(lambda x: _list_keys(x, container), d))
+    
+
+
 def get_keys(fuzzy_key, d=None, verbose=0):
-    ''' fuzzy search on key names contains in a nested dictionary.
-    Return all possible key names starting with fuzzy_key
-:
+    ''' fuzzy search on key names contained in a nested dictionary.
+    Return all possible key names starting with fuzzy_key:
     Arguments:
 
     fuzzy_key - str - possible key name, can be fuzzy like 'exp', 'sca' or nearly complete like 'experiment'
@@ -315,12 +330,18 @@ def get_keys(fuzzy_key, d=None, verbose=0):
     if d is None:
         #d = _bluesky_metadata_store()
         d = gs.RE.md
-    if hasattr(d,'items'):
-        rv = [f for f in d.keys() if f.startswith(fuzzy_key)]
-        if not verbose: print('Possible key(s) to your search is %s' % rv)
-        return rv
-        get_keys(fuzzy_key, d.values())
 
+    container = []
+    _list_keys(d, container)
+    
+    if verbose:
+        # default is not verbose
+        print('All keys in target dictionary are: %s' % str(container))
+    
+    # filter out desired name
+    out = list(filter(lambda x: x.startswtih(fuzzy_key), container))
+        # just a practice. It is equivalent to out = [ x for x in container if x.startswith(fuzzy_key)]
+    return out
 
 def get_keychain(wanted_key, d=None):
     ''' Return keychian(s) of specific key(s) in a nested dictionary
@@ -343,6 +364,7 @@ def get_keychain(wanted_key, d=None):
 
 
 def set_value(key, d=None):
+    # FIX MEEEEEEEEEEEE
     ''' Return the last parent dictionary of key. It is convenient to set metadata value
 
     arguments:
