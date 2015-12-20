@@ -25,7 +25,7 @@ from xpdacquire.utils import composition_analysis
 from tifffile import *
 
 
-pd.set_option('max_colwidth',50)
+pd.set_option('max_colwidth',40)
 pd.set_option('colheader_justify','left')
 
 default_keys = ['owner', 'beamline_id', 'group', 'config', 'scan_id'] # required by dataBroker
