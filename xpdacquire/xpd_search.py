@@ -362,36 +362,27 @@ def get_keychain(wanted_key, d=None):
         elif k == wanted_key:
             return [k]
 
-
-def set_value(key, d=None):
-    # FIX MEEEEEEEEEEEE
-    ''' Return the last parent dictionary of key. It is convenient to set metadata value
-
-    arguments:
-    key - str - name of key you want to search for
-    d        -- dictionary you want to search.  Use bluesky metadata store
-                when not specified.
+def set_value(key, new_value, d):
+    ''' update value of corresponding key in a nested dictionary
+    
+    argumet:
+    key - str - key you want to change
+    new_value - str - value of key to-be-updated
+    d - dict - target dictionary
     '''
-    if d is None:
-        d = gs.RE.md
-    keychain = get_keychain(key)
-    keychain.remove(key)
-    d0 = {} # copy information
-    for k, v in d.items():
-        d0[k]=v
-    out = {}
-    while True:
-        if keychain:
-            #keychain = get_keychain(key)
-            keychain.reverse()
-            try:
-                key_pop = keychain.pop()
-                out.update(d0[key_pop])
-            except IndexError:
-                out.update(d0)
-        else:
-            break
-    return out
+    cur = d
+    keychain = get_keychain(key, d)
+    key_oper = keychain[-1]
+    for path_item in keychain[:-1]:
+        try:
+            cur = cur[path_item]
+        except KeyError:
+            cur = cur[path_item] = {}
+
+    old_value = cur[keychain[-1]]
+    cur[keychain[-1]] = new_value
+    print('Values to key %s has been updated from %s to %s' %(key, old_value, new_value))
+    print(d)
 
 
 def build_keychain_list(key_list, d=None, verbose = 1):
