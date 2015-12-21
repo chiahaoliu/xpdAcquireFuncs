@@ -228,6 +228,8 @@ def run_script(script_name):
 ##################### common functions  #####################
 
 def sum_int(header=db[-1]):
+    ''' sum intensity of last scan. Unused function
+    '''
     int_value = list()
     imgs = np.array(get_images(header,'pe1_image_lightfield'))
     for i in range(imgs.shape[0]):
@@ -252,6 +254,8 @@ def get_calibration_images (calibrant, wavelength, calibration_scan_exposure_tim
     #pe1 = _bluesky_pe1()
     #RE = _bluesky_RE()
 
+    # FIXME my_md = md_gen()
+    '''
     # Prepare hold state
     try:
         sample_hold = copy.copy(gs.RE.md['sample']) #as sample dictionary contains all information
@@ -290,41 +294,22 @@ def get_calibration_images (calibrant, wavelength, calibration_scan_exposure_tim
 
     # extra fields, user defined fields
     gs.RE.md['comments'] = comments
-    #shutter status
-    #if sh1.open:
-        #pass
-    #else:
-        #sh1.open = 1
-    #print('photon_shutter value before open_pv.put(1): %s' % photon_shutter.value)
-    photon_shutter_try = 0
-    number_shutter_tries = 5
-    while photon_shutter.value == 0 and photon_shutter_try < number_shutter_tries:
-        photon_shutter.open_pv.put(1)
-        time.sleep(4.)   
-        print('photon_shutter value after open_pv.put(1): %s' % photon_shutter.value)
-        photon_shutter_try += 1
-    if photon_shutter.value == 0:
-        print('photon shutter failed to open after %i tries. Please check before continuing' % photon_shutter_try)
-        return
+    '''
 
+     _open_shutter()
+ 
     try:
         pe1.acquire_time = calibration_scan_exposure_time
         ctscan = bluesky.scans.Count([pe1], num=num)
         print('collecting calibration data. %s acquisitions of %s s will be collected' % (str(num),str(calibration_scan_exposure_time)))
         ctscan.subs = LiveTable(['pe1_image_lightfield'])
-        gs.RE(ctscan)
+        gs.RE(ctscan, sample = my_md)
 
-        photon_shutter_try = 0
-        number_shutter_tries = 5
-        while photon_shutter.value == 1 and photon_shutter_try < number_shutter_tries:
-            photon_shutter.close_pv.put(1)
-            time.sleep(4.)   
-            print('photon_shutter value after close_pv.put(1): %s' % photon_shutter.value)
-            photon_shutter_try += 1
-        if photon_shutter.value == 1:
-            print('photon shutter failed to close after %i tries. Please check before continuing' % photon_shutter_try)
-            return
-
+        _close_shutter()
+        
+        #FIXME recover md
+        # _recover_md()
+        ''' 
         # recover to previous state, set to values before calibration
         pe1.acquire_time = cnt_hold
         gs.RE.md['iscalibration'] = False
@@ -332,26 +317,19 @@ def get_calibration_images (calibrant, wavelength, calibration_scan_exposure_tim
         gs.RE.md['sample_name'] = sample_name_hold
         gs.RE.md['sample'] = sample_hold
         gs.RE.md['sample']['composition'] = composition_hold
+        '''
 
     except:
-        # recover to previous state, set to values before calibration
-        photon_shutter_try = 0
-        number_shutter_tries = 5
-        while photon_shutter.value == 1 and photon_shutter_try < number_shutter_tries:
-            photon_shutter.close_pv.put(1)
-            time.sleep(4.)   
-            print('photon_shutter value after close_pv.put(1): %s' % photon_shutter.value)
-            photon_shutter_try += 1
-        if photon_shutter.value == 1:
-            print('photon shutter failed to close after %i tries. Please check before continuing' % photon_shutter_try)
-            return
-
+        _close_shutter()
+        # FIXME _revocer_md()
+        ''''
         pe1.acquire_time = cnt_hold
         gs.RE.md['iscalibration'] = False
         del(gs.RE.md['calibrant'])
         gs.RE.md['sample_name'] = sample_name_hold
         gs.RE.md['sample'] = sample_hold
         gs.RE.md['sample']['composition'] = composition_hold
+        '''
         print('scan failed. metadata dictionary reset to starting values.')
         print('To debug, try running some scans using ctscan=bluesky.scans.Count([pe1])')
         print('then do gs.RE(ctscan).  When it is working, run get_calibration_images() again')
@@ -362,12 +340,15 @@ def get_calibration_images (calibrant, wavelength, calibration_scan_exposure_tim
     f_name = '_'.join(['calib', filename_gen(calib_scan_header) +'.tif'])
     w_name = os.path.join(W_DIR, f_name)
     save_tif(calib_scan_header, w_name, sum_frames=True)
+    if os.path.isfile(w_name):
+        print('%s has been saved at %s' % (f_name, W_DIR))
+        print('Please open XPDFSuite and perform calibration')
 
     global LAST_CALIB_UID
     LAST_CALIB_UID = calib_scan_header.start.uid
 
 
-def get_light_images(scan_time=1.0, scan_exposure_time=0.2,  comments='', number_shutter_tries=5):
+def get_light_images(scan_time=1.0, scan_exposure_time=0.2):
     '''function for getting a light image
 
     Arguments:
@@ -376,10 +357,14 @@ def get_light_images(scan_time=1.0, scan_exposure_time=0.2,  comments='', number
         comments - dictionary - optional. dictionary of user defined key:value pairs.
         scan_def - object - optional. bluesky scan object defined by user. Default is a count scan
     '''
+    #FIXME we need a method to create metadata dictionary
+    # my_md = _md_gen()
+    
     #gs = _bluesky_global_state()
     #RE = _bluesky_RE()
     #pe1 = _bluesky_pe1()
     #cs700 = _bluesky_cs700()
+    '''
     if comments:
         #extra_key = comments.keys()
         #for value in comments:
@@ -414,7 +399,7 @@ def get_light_images(scan_time=1.0, scan_exposure_time=0.2,  comments='', number
     except:
         temp_hold =''
         pass
-
+    '''
 
     # don't expose the PE for more than 5 seconds max, set it to 1 seconds if you go beyond limit
     if scan_exposure_time > 5.0:
@@ -435,6 +420,7 @@ def get_light_images(scan_time=1.0, scan_exposure_time=0.2,  comments='', number
     # set up scan definition
     scan = bluesky.scans.Count([pe1],num)
 
+    '''
     # assign values to current scan
     #scan_type = scan.logdict()['scn_cls']
     gs.RE.md['scan_info']['scan_exposure_time'] = pe1.acquire_time
@@ -442,62 +428,40 @@ def get_light_images(scan_time=1.0, scan_exposure_time=0.2,  comments='', number
     gs.RE.md['scan_info']['total_scan_duration'] = num*pe1.acquire_time
     #gs.RE.md['scan_info']['scan_type'] = scan_type
     gs.RE.md['sample']['temp'] = str(cs700.value[1])+'k'
-
-    #shutter status
-    if sh1.open:
-        pass
-    else:
-        sh1.open = 1
-
-    # this logic needed when we are using photon shutter at xpd
-    print('photon_shutter value before open_pv.put(1): %s' % photon_shutter.value)
-    # open photon shutter
-    photon_shutter_try = 0
-    while photon_shutter.value == 0 and photon_shutter_try < number_shutter_tries:
-        photon_shutter.open_pv.put(1)
-        time.sleep(4.)   
-        print('photon_shutter value after open_pv.put(1): %s' % photon_shutter.value)
-        photon_shutter_try += 1
-    if photon_shutter.value == 0:
-        print('photon shutter failed to open after %i tries. Please check before continuing' % photon_shutter)
-        return
+    '''
+      
     
     try:
-        gs.RE(scan)
-        #try:
-            #sh1.close = 1
-        #except AttributeError:
-            #pass
-        print('photon_shutter value before close_pv.put(1): %s' % photon_shutter.value)
-        photon_shutter_try = 0
-        while photon_shutter.value ==1 and photon_shutter_try < 5:
-            photon_shutter.close_pv.put(1)
-            time.sleep(4.)   
-            print('photon_shutter value after close_pv.put(1): %s' % photon_shutter.value)
-            photon_shutter_try += 1
+        # open_shutter, dump md to scan and close shutter
+
+        # FIXME: we need a method to create md.
+        # my_md = md_gen(inputs)
+
+        _open_shutter()
+        gs.RE(scan, sample = my_md)
+        _close_shutter()
         
     except:
-        # deconstruct the metadata
-        #try:
-            #sh1.close = 1
-        #except AttributeError:
-            #pass
-        # close photon shutter
-        print('photon_shutter value before close_pv.put(1): %s' % photon_shutter.value)
-        photon_shutter_try = 0
-        while photon_shutter.value ==1 and photon_shutter_try < 5:
-            photon_shutter.close_pv.put(1)
-            time.sleep(4.)   
-            print('photon_shutter value after close_pv.put(1): %s' % photon_shutter.value)
-            photon_shutter_try += 1
+        # if scan fails. close shutter and recover metadata
+        
+        # FIXME: we need a method to store md in parallel so that we can recover anytime
+        #_recover_md()
+        
+        _close_shutter()
+        #_recover_md()
+        print('image collection failed. Check why run engine is not working and rerun')
 
+        '''
         gs.RE.md['scan_info'] = {'scan_exposure_time' : scan_exposure_time_hold,'number_of_exposures' : scan_steps_hold, 'total_scan_duration' : total_scan_duration_hold }
         gs.RE.md['comments'] = {}
         gs.RE.md['sample']['temperature'] = temp_hold
-        print('image collection failed. Check why gs.RE(scan) is not working and rerun')
+        '''
+        
         return
 
-def nstep(start, stop, step_size):
+def _nstep(start, stop, step_size):
+    ''' helper function to define motor series
+    '''
     step = np.arange(start, stop, step_size)
     return np.append(step, stop)
 
@@ -514,17 +478,20 @@ def tseries(start_temp, stop_temp, step_size = 5.0, total_exposure_time_per_poin
     '''
     import uuid
 
-    temp_series = nstep(start_temp, stop_temp, step_size) 
+    temp_series = _nstep(start_temp, stop_temp, step_size) 
     print('Temperature series will cover these points %s' % str(temp_series))
     print('Ctrl + c to exit if it is incorrect')
-    print('To view data from intermidate scans, open a new icollection session')
+    print('To view data from intermidate scans, open a new ipython session')
     print('type "from xpdacquire.xpdacquirefuncs import *"')
     print('type "save_tif(db[-1])"')
     print('then use xPDFsuite or program of choice to investigate')
-    print('DO NOT ENTER ANY MOTOR COMMANDS IN NEW IPYTHON SESSION, that will ruin your scan')
+    print('DO NOT PASS ANY MOTOR COMMANDS IN NEW IPYTHON SESSION, that will ruin your scan')
 
-    md_hold = copy.copy(gs.RE.md)
+    md_hold = copy.deepcopy(gs.RE.md)
     try:
+        # FIXME we need a method to create md rubustly
+        # my_md = md_gen(inputs)
+        '''
         gs.RE.md['istseries'] = True
         tseries_uid = str(uuid.uuid4())
         gs.RE.md['tseries'] = {}
@@ -534,30 +501,40 @@ def tseries(start_temp, stop_temp, step_size = 5.0, total_exposure_time_per_poin
         gs.RE.md['tseries']['stop'] = stop_temp
         gs.RE.md['tseries']['step_size'] = step_size
         gs.RE.md['tseries']['device'] = str(t_device)
+        '''
+
         for temp in temp_series:
             mov(t_device, temp)
             actual_temp = t_device.value[1] # real temperature
-            gs.RE.md['sample']['temp'] = actual_temp
-            get_light_images(total_exposure_time_per_point, exposure_time_per_frame, comments)
+            #gs.RE.md['sample']['temp'] = actual_temp
+            get_light_images(total_exposure_time_per_point, exposure_time_per_frame)
             header = db[-1]
             # take care of file name in temperature scan
             #header = db[-1]
             #f_name = '_'.join(feature_gen(header), str(temp)+'K')
             #save_tif(db[-1], tif_name = f_name, dark_correction = correction_option)
-        gs.RE.md = md_hold
+        # FIXME: we need a method to reover md
+        # _recover_md()
         print('Temperature scan finished...')
 
     except:
         print('Error or keybord interupt. Please try again')
-        gs.RE.md = md_hold
+        #_recover_md()
     return
 
 
 def myMotorscan(start, stop, step_size, motor, det, exposure_time_per_point = 1.0, exposure_time_per_frame = 0.2):
-    step_series = nstep(start, stop, step_size)
+    ''' define a general motor scan with advanced msg method
+    '''    
+
+    step_series = _nstep(start, stop, step_size)
+    # don't expose PE1 more than 5 secs
     if exposure_time_per_point > 5:
+        print('Your exposure time exceeds 5 secs which could damage detector')
+        print('Recalculating exposure time per frame while still maintain your total exposre time....')
         exposure_time_per_point = 5
-    exposure_num = np.rint(exposure_time_per_point/exposure_time_per_frame)
+    
+    exposure_num = np.rint(exposure_time_per_point/exposure_time_per_frame)    
     pe1.acquire_time = exposure_time_per_frame
     yield Msg('open_run')
     yield Msg('configure',det)
@@ -589,7 +566,7 @@ def Tseries(start_temp, stop_temp, step_size, motor = cs700, det = pe1, exposure
     '''
     Tscan = myMotorscan(start_temp, stop_temp, step_size, exposure_time_per_point,exposure_time_per_frame, motor, det)
     
-    temp_series = nstep(start_temp, stop_temp, step_size) 
+    temp_series = _nstep(start_temp, stop_temp, step_size) 
     print('Temperature series will cover these points %s' % str(temp_series))
     print('Ctrl + c to exit if it is incorrect')
     print('To view data from intermidate scans, open a new icollection session')
@@ -598,8 +575,11 @@ def Tseries(start_temp, stop_temp, step_size, motor = cs700, det = pe1, exposure
     print('then use xPDFsuite or program of choice to investigate')
     print('DO NOT ENTER ANY MOTOR COMMANDS IN NEW IPYTHON SESSION, that will ruin your scan')
 
-    md_hold = copy.copy(gs.RE.md)
+    #md_hold = copy.copy(gs.RE.md)
     try:
+        # FIXME we need a method to create md robustly
+        # my_md = md_gen()
+        '''
         gs.RE.md['istseries'] = True
         #tseries_uid = str(uuid.uuid4())
         gs.RE.md['tseries'] = {}
@@ -609,195 +589,19 @@ def Tseries(start_temp, stop_temp, step_size, motor = cs700, det = pe1, exposure
         gs.RE.md['tseries']['stop'] = stop_temp
         gs.RE.md['tseries']['step_size'] = step_size
         gs.RE.md['tseries']['device'] = str(motor.name)
-        gs.RE(Tscan, LiveTable([str(motor),str(det)+'_image_lightfield']))
-        gs.RE.md = md_hold
-        gs.RE(Tscan)
-        print('Temperature scan finished...')
+        '''
+        _open_shutter()
+        gs.RE(Tscan, LiveTable([str(motor),str(det)+'_image_lightfield']), sample=my_md)
+        _close_shutter()
+        
+        # FIXME: we need a method to recover md
+        # _md_recover()
 
     except:
         print('Error or keybord interupt. Please try again')
-        gs.RE.md = md_hold
-    return
-
-def load_calibration(config_file = False, config_dir = False):
-    '''Function loads calibration values as metadata to save with scans
-
-    takes calibration values from a SrXplanar config file and
-    loads them in the bluesky global state run engine metadata dictionary.
-    They will all automatically be saved with every run.
-
-    An example workflow is the following:
-    1) get_calibration_images('Ni',wavelength=0.1234)
-    2) open xPDFsuite and run the calibration in the SrXplanar module (green button
-           in xPDFsuite).  See SrXplanar help documentation for more info.
-    3) write the calibration data to an xPDFsuite config file in config_base directory
-
-    Arguments:
-    config_file -str - optional. name of your desired config file. If unspecified, the most recent one will be used
-    config_dir - str - optional. directory where your config files are located. If not specified, default directory is used
-    normal usage is not to use change these defaults.
-    '''
-    #gs = _bluesky_global_state()
-    from configparser import ConfigParser
-    # figure out directory to read from
-    if not config_dir:
-        read_dir = R_DIR
-    else:
-        read_dir = str(config_dir)
-
-    if not config_file:
-        # if not specified file, read the most recent config file in read_dir
-        f_list = [ f for f in os.listdir(read_dir) if f.endswith('.cfg')]
-        if len(f_list) ==0:
-            print('There is no config file in %s. Please make sure you have at least created one config file' % read_dir)
-            return
-        f_dummy = []
-        for f in f_list:
-            f_dummy.append(os.path.join(read_dir,f))
-        f_sort = sorted(f_dummy, key = os.path.getmtime)
-        f_recent = f_sort[-1]
-        f_time = _timestampstr(os.path.getmtime(f_recent))  # time of config file
-        config_file_stub = str(f_recent)
-        f_name = os.path.join(read_dir, config_file_stub)
-        if len(f_sort) >0:
-            print('Using %s, the most recent config file that was found' % config_file_stub)
-        else:
-            print('There is no .cfg file in '+ read_dir)
-            print('make sure the config file has been written in that directory and has extension ".cfg"')
-            return
-    else:
-        f_name = os.path.join(read_dir,config_file)
-        if os.path.isfile(f_name):
-            config_file_stub = config_file # name of config file
-            f_time = _timestampstr(os.path.getmtime(f_name)) # time of config file
-            print('Using user-supplied config file: %s located at %s' % (config_file, read_dir))
-        else:
-            print('Your config file "%s" is not found at "%s" Please check again your directory and filename' % (config_file, read_dir))
-            return
-
-    # read config file into a dirctionary
-    config = ConfigParser()
-    config.read(f_name)
-    sections = config.sections()
-
-    config_dict = {}
-    for section in sections:
-        config_dict[section] = {} # write down header
-        options = config.options(section)
-        for option in options:
-            try:
-                config_dict[section][option] = config.get(section, option)
-                #if config_dict[option] == -1:
-                #    DebugPrint("skip: %s" % option)
-            except:
-                print("exception on %s!" % option)
-                config_dict[option] = None
-    gs.RE.md['calibration_scan_info']['calibration_information'] = {'from_calibration_file':str(config_file_stub),'calib_file_creation_date':f_time, 'config_data':config_dict}
-
-    print('Calibration metadata will be saved in dictionary "calibration_information" with subsequent scans')
-    print('Type gs.RE.md to check if config data has been stored properly')
-    print('Run load_calibration() again to update/switch your config file')
-
-def new_experimenters(experimenters, update=True):
-    ''' This function sets up experimenter name(s). This function can be run at anytime to change experimenter global setting
-    Argument:
-        experimenters - str or list - name of current experimenters
-        update - bool - optional. set True to update experimenters list and set False to extend experimenters list
-    '''
-    #gs = _bluesky_global_state()
-    if update:
-        gs.RE.md['experimenters'] = experimenters
-    else:
-        gs.RE.md['experimenters'].extend(experimenters)
-
-    print('Current experimenters is/are %s' % experimenters)
-    print('To update metadata dictionary, rerun new_sample() or new_experimenters(), with desired information as the argument')
-
-def composition_dict_gen(sample):
-    '''generate composition dictionary with desired form
-
-    argument:
-    sample_name - tuple - if it is a mixture, give a tuple following corresponding amounts. For example, ('NaCl',1,'Al2O3',2)
-    '''
-    sample_list = [ el for el in sample if isinstance(el,str)]
-    amount_list = [ amt for amt in sample if isinstance(amt, float) or isinstance(amt, int)]
-    compo_dict_list = []
-    for i in range(len(sample_list)):
-        compo_dict = {}
-        compo_dict['phase_name'] = sample_list[i]
-        compo_analysis_dict = {}
-        (e,a) = composition_analysis(sample_list[i])
-        for j in range(len(e)):
-            compo_analysis_dict[e[j]] = a[j]
-        compo_dict['element_info'] = compo_analysis_dict
-        compo_dict['phase_amount'] = amount_list[i]
-        
-        compo_dict_list.append(compo_dict)
-    return compo_dict_list
-
-
-def new_sample(sample_name, sample, experimenters=[], comments='', verbose = 1):
-    '''set up metadata fields for your runengine
-
-    This function sets up persistent metadata that will be saved with subsequent scans,
-    including a list of experimenters and the sample composition, as well as other user
-    defined comments.  It can be rerun multiple times until you are happy with the settings,
-    then these settings will be applied to scan metadata when the scans are run later.
-
-    Arguments:
-
-    sample - tuple- a tuple including sample name such as "dppa2" or "Al2O3" and corresponding amount.
-        For example, ('CaCO3',1.0) means a pure sample and ('CaCO3',1.0,'TiO2',2.0) stands for a 1:2 mix of CaCO3 and TiO2
-    experimenters - list - optional. list of current experimenter(s). reuse current value if not given
-    comments - dict - optional. user supplied comments that relate to the current sample. Default = ""
-    verbose - bool - optional. set to false to suppress printed output.
-    '''
-    #gs = _bluesky_global_state()
-    if verbose: print('Setting up global run engines(gs.RE) with your metadata.......')
-
-    if not experimenters:
-        try:
-            experimenters = gs.RE.md['experimenters']
-        except KeyError:
-            experimenters = ''
-        print('Current experimenters is/are "%s"' % experimenters)
-    else:
-        new_exp = experimenters
-        gs.RE.md['experimenters'] = new_exp
-        print('"Experimenters" has been updated as "%s"' % experimenters)
-
-    if not comments:
-        try:
-            comments = gs.RE.md['comments']
-        except KeyError:
-            comments = ['']
-        print('Current comments to this experiment are "%s"' % comments)
-    else:
-        new_comments = comments
-        gs.RE.md['comments'] = comments
-        print('"Comments" has been updated as "%s"' % comments)
-
-    try:
-        gs.RE.md['sample']
-        try:
-            gs.RE.md['sample']['composition']
-        except KeyError:
-            gs.RE.md['sample']['composition'] = {}
-    except KeyError:
-        gs.RE.md['sample'] = {}
-
-    gs.RE.md['sample']['composition'] = composition_dict_gen(sample)
-    sample_name_list = [ el for el in sample if isinstance(el, str)]
-    gs.RE.md['sample_name'] = sample_name
-    print('Current sample_name_list is "%s"\ncomposition dictionary is "%s"' % (sample_name_list, composition_dict_gen(sample)))
-    print('To change experimenters or sample, rerun new_user() or new_sample() respectively, with desired experimenter list as the argument')
-  
-    time_stub = _timestampstr(time.time())
-    gs.RE.md['sample']['sample_load_time'] = time_stub
-    if verbose: print('sample_load_time has been recorded: %s' % time_stub)
-    print('To update metadata dictionary, re-run new_sample() or new_experimenters()')
-   # if verbose: print('Sample and experimenter metadata have been set')
-    if verbose: print('To check what will be saved with your scans, type "gs.RE.md"')
+        # FIXME: we need a method to recover md
+        # _md_recover()
+        return
 
 def view_image(headers=False):
     if not headers:
@@ -857,6 +661,8 @@ def print_dict(d, ident = '', braces=1):
 
 def print_metadata():
     print_dict(gs.RE.md)
+
+
 def _clean_metadata():
     '''
     reserve for completely cleaning metadata dictionary
@@ -958,69 +764,59 @@ def get_dark_images(dark_scan_exposure_time = False):
     #gs = _bluesky_global_state()
     #RE = _bluesky_RE()
     #pe1 = _bluesky_pe1()
-    gs.RE.md['isdark'] = True
     dark_cnt_hold = copy.copy(pe1.acquire_time)
+
     if not dark_scan_exposure_time:
+        # FIXME my_md = md_gen()
+        '''
         try:
             gs.RE.md['dark_scan_info']
         except KeyError:
             gs.RE.md['dark_scan_info'] = {}
-    
+        '''
+
         print('Collecting your dark stacks now...')
+
+        # get rid of residuals
         pe1.acquire_time=0.1
-        dummy_scan = bluesky.scans.Count([pe1], num=10)  # to get rid of residual current
+        dummy_scan = bluesky.scans.Count([pe1], num=10)
+ 
         from bluesky import RunEngine
-        #testRE = RunEngine()
-        #gs.RE(dummy_scan)
+        gs.RE(dummy_scan)
+        
+        # Real dark stack
         dark_dict = {}
         try:
             _close_shutter()
-            #photon_shutter_try = 0
-	    #number_shutter_tries = 5
-            #while photon_shutter.value == 1 and photon_shutter_try < number_shutter_tries:
-                #photon_shutter.close_pv.put(1)
-                #time.sleep(4.)   
-                #print('photon_shutter value after close_pv.put(1): %s' % photon_shutter.value)
-                #photon_shutter_try += 1
-            #if photon_shutter.value == 1:
-                #print('photon shutter failed to close after %i tries. Please check before continuing' % photon_shutter_try)
-                #return
+            
             for i in range(1,5):
                 pe1.acquire_time = 0.1*i
                 dark_scan_expsoure = pe1.acquire_time
-                gs.RE.md['dark_scan_info'] = {'dark_scan_exposure_time':pe1.acquire_time}
+                # FIXME my_md = md_gen()
+                #gs.RE.md['dark_scan_info'] = {'dark_scan_exposure_time':pe1.acquire_time}
 
                 ctscan = bluesky.scans.Count([pe1],num=1)
                 ctscan.subs = LiveTable(['pe1_image_lightfield'])
-                gs.RE(ctscan)
+                gs.RE(ctscan, sample=my_md)
         
-                # save tif to dark_base
+                # verify dimension in dark_base
                 dark_base_header=db[-1]
-                #uid = dark_base_header.start.uid[:6]
-                #time_stub = _timestampstr(dark_base_header.stop.time)
                 img = np.array(get_images(dark_base_header,'pe1_image_lightfield'))
                 print('image shape is '+ str(np.shape(img)))
-
-                #f_name = '_'.join([time_stub, uid, 'dark','00'+str(i)+'.tif'])
-                #w_name = os.path.join(D_DIR,f_name)
-                #imsave(w_name, img) # overwrite mode
-        
-                 # fill up dark_dict
+                
+                # fill up dark_dict
                 dark_dict[pe1.acquire_time] = dark_base_header.start.uid
            
-            gs.RE.md['isdark'] = False
+            # FIXME _recover_md()
+            #gs.RE.md['isdark'] = False
             pe1.quire_time = dark_cnt_hold
-                #if os.path.isfile(w_name):
-                    #print('%s has been saved to %s' % (f_name, D_DIR))
-                    #pass
-                #else:
-                    #print('Error: dark image tif file not written')
-                    #print('Investigate and re-run')
-                    #return
+
         
             dark_dict_name = '_'.join(['dark_base', _timestampstr(time.time())])
             w_dark_dict_name =  os.path.join(D_DIR, dark_dict_name)
-            #print(dark_dict)
+            print('Your dark dictionary with (exposure_time, uid) pairs is :')
+            print(dark_dict)
+
             #save dark_dict for search later on
             with open(w_dark_dict_name+'.txt', 'w') as w_dark:
                 json.dump(dark_dict, w_dark)
@@ -1031,38 +827,33 @@ def get_dark_images(dark_scan_exposure_time = False):
                 return
 
         except:
-            gs.RE.md['isdark'] = False
+            # gs.RE.md['isdark'] = False
+            # FIXME recover_md()
             pe1.acquire_time = dark_cnt_hold
 
             _close_shutter()
             print('Something went wrong, dark images acqusition was not complete. Please check everything and run get_dark_images() again')
-            #photon_shutter_try = 0
-            #number_shutter_tries = 5
-            #while photon_shutter.value == 1 and photon_shutter_try < number_shutter_tries:
-                #photon_shutter.close_pv.put(1)
-                #time.sleep(4.)   
-                #print('photon_shutter value after close_pv.put(1): %s' % photon_shutter.value)
-                #photon_shutter_try += 1
-	    #if photon_shutter.value == 1:
-                #print('photon shutter failed to close after %i tries. Please check before continuing' % photon_shutter_try)
-                #return
+            
             return
 
     else:
-        #just a functionality, not planning to deliver
+        # FIXME I know it is unstableeeeeeeee
+        # allow user to collect dark frame with certain exposure time
         pe1.acquire_time = dark_scan_exposure_time
         ctscan = bluesky.scans.Count([pe1], num=1)
         gs.RE(ctscan)
         dark_dict_name = [f_name for f_name in os.listdir(D_DIR) if f_name.endswith('txt')]
         dark_dict_list = []
+
         for d in dark_dict_name:
             dark_dict_list.append(os.path.join(D_DIR,d))
         if not dark_dict_list:
             print('There is no dark dictionary in dark_base. Pleas run get_dark_images() again to build dark_base')
             return
+
         last_dark_dict = sorted(dark_dict_list, key = os.path.getmtime) # find the lastest dark_dict
         rv = last_dark_dict[-1]
-        #print(rv)
+        print(rv)
         with open(rv) as f:
             read_dict = json.load(f)
         new_dict = {str(pe1.acquire_time) : str(ctscan.start.uid)}
@@ -1094,6 +885,7 @@ def _open_shutter():
     print('photon_shutter value before open_pv.put(1): %s' % photon_shutter.value)
     # open photon shutter
     photon_shutter_try = 0
+    photon_shutter_tries = 5
     while photon_shutter.value == 0 and photon_shutter_try < number_shutter_tries:
         photon_shutter.open_pv.put(1)
         time.sleep(4.)   
