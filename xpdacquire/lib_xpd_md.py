@@ -10,13 +10,39 @@ def _timestampstr(timestamp):
     #corrected_timestampstring = timestampstring.replace(':','-')
     return timestampstring
 
-
-def Set_experiment(safN, experimenters, update, time):
+def Set_beamtime(safN, experimenters, update):
     ''' This function sets up experimenter name(s). This function can be run at anytime to change experimenter global setting
     Argument:
         experimenters - str or list - name of current experimenters
         update - bool - optional. set True to update experimenters list and set False to extend experimenters list
     '''
+    import time
+    experimenters_list = []
+    if not isinstance(experimenters, list):
+        if isinstance(experimenters, str):
+            experimenters_list.append(experimenters)
+        else:
+            raise TypeError('Experimenters needs to be str or list')
+    else:
+        experimenters_list = experimenters
+
+    if not isinstance(safN, str):
+        raise TypeError('SAF number needs to be a str')
+    
+    timestamp = _timestampstr(time.time())    
+    print('Current experimenters is/are %s' % experimenters_list)
+    print('Current SAF number is %s' % safN)
+
+    return (safN, experimenters_list, timestamp)
+
+
+def Set_experiment():
+    return
+    ''' This function sets up experimenter name(s). This function can be run at anytime to change experimenter global setting
+    Argument:
+        experimenters - str or list - name of current experimenters
+        update - bool - optional. set True to update experimenters list and set False to extend experimenters list
+    
     experimenters_list = []
     if not isinstance(experimenters, list):
         if isinstance(experimenters, str):
@@ -34,7 +60,7 @@ def Set_experiment(safN, experimenters, update, time):
     print('Current SAF number is %s' % safN)
 
     return (safN, experimenters_list, timestamp)
-
+    '''
 
 def composition_dict_gen(sample):
     '''generate composition dictionary with desired form

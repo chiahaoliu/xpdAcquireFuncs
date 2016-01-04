@@ -7,7 +7,7 @@ def _MD_template():
     _clean_metadata()
     gs.RE.md['iscalib'] = 0
     gs.RE.md['isdark'] = 0
-    gs.RE.md['isbackground'] = 0 # back ground image
+    gs.RE.md['isbackground'] = 0 # background image
     gs.RE.md['experimenters'] = []
     gs.RE.md['sample_name'] = ''
     gs.RE.md['calibrant'] = '' # transient, only for calibration set
