@@ -36,25 +36,40 @@ class Beamtime(object):
 
 
 class Experiment(object):
-    def __init__(self, obj, user_dict=None):
-        #FIXME method to dump in key, value pairs to attribute
+    def __init__(self, obj, user_dict=None, env_var=None):
         import uuid
+        from lib_xpd_md import _get_namespace
+
         uid = str(uuid.uuid1())
         self.experiment_uid = uid
-        
+       
+        # dump user supplied info into class 
         if user_dict:
             for k,v in user_dict.items():
                 setattr(self, k, v)  
-    
-        self.set_experiment()
+            self.set_experiment()
         self.Beamtime = obj
+        
+        # hook to environment variable
+        if env_var:
+            env_dict = {}
+            if isinstance(env_var, str):
+                env_var_op = []
+                env_var_op.append(env_var)
+            elif isinstance(env_var, list):
+                env_var_op = env_var
+            else:
+                print('motor/detector name should be a string or a list')
+                return
+            for el in env_var_op:
+                env_dict[el] = _get_namespace(el)
+            env_key = env_dict.keys()
+            env_val = env_dict.values()
+            print('Your have included environment varibales and its corresponding values: %s' % env_dict)
 
     def set_experiment(self):
         from lib_xpd_md import Set_experiment
-        out = Set_experiment()
-        #self.safN = out[0]
-        #self.experimenters = out[1]
-        #self.modified_time = out[2]
+        out = Set_experiment() # remain as a method but it does nothing now
 
     def show_experiment(self):
         full_info = self.__dict__
@@ -70,6 +85,10 @@ class Experiment(object):
         
 class Sample(object):
     def __init__(self, obj, sample_name='', composition=(), comments='', time = time.time()):
+        import uuid
+        uid = str(uuid.uuid1())
+        self.sample_uid = uid
+
         self.set_sample(sample_name, composition)
         self.sample_comments = comments
 
@@ -81,10 +100,9 @@ class Sample(object):
         out = Set_sample(sample_name_val, sample_val, time)
         self.sample_name = out[0]
         self.composition = out[1]
-        # FIXME: time stamp is incorrect now. It is the time of instanciation
         self.modified_time = out[2]
 
-    def show(self):
+    def show_sample(self):
         full_info = self.__dict__
         real_info = {}
         for k in full_info.keys():
@@ -98,23 +116,49 @@ class Sample(object):
 
 
 class Scan(object):
-    def __init__(self, obj, scan_tag = '', config = {}):
-        self.set_scan(scan_tag, config)
-        
+    # blusesky has saved most of necessary metadata
+    # so I keep method in Scan and Event simple
+    def __init__(self, obj, production=True):
+        if production:
+            # default behavior is not dryrun
+            self.scan_tag = 'Production'
+        else:
+            self.scan_tag = 'Test'
+ 
         self.Sample = obj
 
-    def set_scan(self, scan_tag, config):
-        self.scan_tag = '_method_applied'
-        self.config = {}
+    def set_scan(self, scan_tag):
+        from lib_xpd_md import Set_scan
+        # dummy method
+        Set_scan()    
 
-    def show(self):
-            full_info = self.__dict__
-            real_info = {}
-            for k in full_info.keys():
-                if k.islower():
-                    real_info[k] = full_info.get(k)
-            return real_info
+    def show_scan(self):
+        from lib_xpd_md import show_obj
+        out = show_obj(self) 
 
     def __getattr__(self, name):
         # get attributes from all parent layer
         return getattr(self.Sample, name)
+
+
+class Event(object):
+    # blusesky has saved most of necessary metadata
+    # so I keep method in Scan and Event simple
+    def __init__(self, obj, production = True)
+        if production:
+            self.event_tag = 'Production'
+        else:
+            self.event_tag = 'Test'
+
+        self.Scan = obj 
+
+    def set_event(self):
+        from lib_xpd_md import Set_scan
+        Set_scan()
+
+    def show_event(self):
+        from lib_xpd_md import show_obj
+        out = show_obj(self)
+    
+    def __getattr__(self, name):
+        return getattr(self.Scan, name)

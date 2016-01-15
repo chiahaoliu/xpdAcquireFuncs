@@ -10,6 +10,19 @@ def _timestampstr(timestamp):
     #corrected_timestampstring = timestampstring.replace(':','-')
     return timestampstring
 
+def _get_namespace(var_name):
+    ''' this function get and varify if a variable exits in current ipython shell
+        mainly used to check valied motor name
+    '''
+    ipshell = get_ipython()
+    try:
+        var_val = ipshell.user_ns[var_name]
+    except KeyError:
+        print('%s does not exit in current name space. Please check if it is instaciated' % var_name)
+        return
+ 
+    return var_val
+
 def Set_beamtime(safN, experimenters, update):
     ''' This function sets up experimenter name(s). This function can be run at anytime to change experimenter global setting
     Argument:
@@ -117,6 +130,24 @@ def Set_sample(sample_name, sample, time):
     return (sample_name, composition, timestamp) 
 
 
+def Set_scan():
+    return
+
+def Set_event():
+    return
+
+def show_obj(obj):
+    full_info = obj.__dict__
+    real_info = {}
+    
+    for k in full_info.keys():
+        if k.islower():
+            real_info[k] = full_info.get(k)
+
+    print(full_info)
+    
+    return real_info
+   
 
 ###########################################################
 
