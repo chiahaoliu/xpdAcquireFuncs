@@ -5,7 +5,6 @@ import time
 
 class Beamtime(object):
     def __init__(self, safN, start_date, end_date, experimenters = [], update = False ):
-        import time
         import uuid
         uid = str(uuid.uuid1())
         self.beamtime_uid = uid
@@ -96,6 +95,13 @@ class Sample(object):
         self.Experiment = obj
 
     def set_sample(self, sample_name_val, sample_val, time = time.time()):
+        ''' 
+        Set up data in sample object
+        
+        Arguments:
+            sample_name_val - str - sample name, like 'NaCl' or 'NADDPH'
+            sample_val - tuple - tuple that represents chemical composition. For example: ('Na', 1, 'Cl', 1)
+        '''
         from lib_xpd_md import Set_sample
         out = Set_sample(sample_name_val, sample_val, time)
         self.sample_name = out[0]
@@ -144,7 +150,7 @@ class Scan(object):
 class Event(object):
     # blusesky has saved most of necessary metadata
     # so I keep method in Scan and Event simple
-    def __init__(self, obj, production = True)
+    def __init__(self, obj, production = True):
         if production:
             self.event_tag = 'Production'
         else:
