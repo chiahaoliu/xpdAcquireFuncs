@@ -17,6 +17,7 @@ def _make_datapaths():
 def _ensure_empty_datapaths():
     '''Raise RuntimeError if datapath.base has any file except those expected.
     '''
+
     from xpdacquire.config import datapath
     allowed = set(datapath.allfolders)
     spurious = []
